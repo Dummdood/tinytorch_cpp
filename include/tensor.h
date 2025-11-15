@@ -1,6 +1,7 @@
 #include <vector>
 #include <stdexcept>
 #include <random>
+#include <cmath>
 
 class Tensor {
     int rows_;
@@ -101,6 +102,57 @@ public:
             prod.vals_.begin(),
             std::multiplies<float>()); 
         return prod;
+    }
+
+    // Activation Functions
+    static Tensor relu(const Tensor& t) {
+        Tensor out(t.rows_, t.cols_);
+        std::transform(
+            t.vals_.begin(),
+            t.vals_.end(),
+            out.vals_.begin(),
+            [](float x) { return x > 0.0f ? x : 0.0f; }
+        );
+    }
+    static Tensor sigmoid(const Tensor& t) {
+        Tensor out(t.rows_, t.cols_);
+        std::transform(
+            t.vals_.begin(),
+            t.vals_.end(),
+            out.vals_.begin(),
+            [](float x) { return 1.0f / (1.0f + std::exp(-x)); }
+        );
+        return out;
+    }
+    static Tensor tanh(const Tensor& t) {
+        Tensor out(t.rows_, t.cols_);
+        std::transform(
+            t.vals_.begin(),
+            t.vals_.end(),
+            out.vals_.begin(),
+            [](float x) { return std::tanh(x); }
+        );
+        return out;
+    }
+    static Tensor softmax(const Tensor& t) {
+        float max_logit = *std::max_element(t.vals_.begin(), t.vals_.end());
+
+        Tensor expT(t.rows_, t.cols_);
+        std::transform(
+            t.vals_.begin(),
+            t.vals_.end(),
+            expT.vals_.begin(),
+            [max_logit](float x) { return std::exp(x - max_logit); }
+        );
+
+        float sum_exp = std::accumulate(expT.vals_.begin(), expT.vals_.end(), 0.0f);
+        std::transform(
+            expT.vals_.begin(),
+            expT.vals_.end(),
+            expT.vals_.begin(),
+            [sum_exp](float x) { return x / sum_exp ; }
+        );
+        return expT;
     }
 };
 

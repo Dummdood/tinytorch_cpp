@@ -19,18 +19,27 @@ class Tensor {
         );
     }
 
+    // Error checking
+    static void initCheck(int rows, int cols) {
+        if (rows < 1 || cols < 1) {
+            throw std::invalid_argument("Tensor: shape must be strictly positive in both dimensions."); 
+        }
+    }
     static void tMatch(const Tensor& t1, const Tensor& t2) {
         if (t1.rows_ != t2.rows_ || t1.cols_ != t2.cols_) {
             throw std::invalid_argument("Tensor: shapes must match.");
+        }
+    }
+    static void matmulMatch(const Tensor& t1, const Tensor& t2) {
+        if (t1.cols_ != t2.rows_) {
+            throw std::invalid_argument("Tensor: matmul dimension mismatch (t1.cols != t2.rows).");
         }
     }
 
 public:
     // Constructors
     explicit Tensor(int rows, int cols) : rows_(rows), cols_(cols) {
-        if (rows < 1 || cols < 1) {
-            throw std::invalid_argument("Tensor: shape must be strictly positive in both dimensions."); 
-        }
+        initCheck(rows, cols);
         vals_.resize(rows * cols);
     }
 
@@ -43,14 +52,6 @@ public:
     }
     int numel() const {
         return rows_ * cols_;
-    }
-
-    // Operators
-    float& operator()(int row, int col) {
-        return vals_[getIndex(row, col)];
-    }
-    const float& operator()(int row, int col) const {
-        return vals_[getIndex(row, col)];
     }
 
     // Factories
@@ -84,7 +85,13 @@ public:
         return t;
     }
 
-    // Operations
+    // Operations Overloads
+    float& operator()(int row, int col) {
+        return vals_[getIndex(row, col)];
+    }
+    const float& operator()(int row, int col) const {
+        return vals_[getIndex(row, col)];
+    }
     static Tensor add(const Tensor& t1, const Tensor& t2) {
         tMatch(t1, t2);
         Tensor sum(t1.rows_, t1.cols_);
@@ -102,6 +109,18 @@ public:
             prod.vals_.begin(),
             std::multiplies<float>()); 
         return prod;
+    }
+    static Tensor matmul(const Tensor& t1, const Tensor& t2) {
+        matmulMatch(t1, t2);
+        Tensor out = zeros(t1.rows_, t2.cols_);
+        for (int i = 0; i < t1.rows_; i++) {
+            for (int j = 0; j < t2.cols_; j++) {
+                for (int k = 0; k < t1.cols_; k++) {
+                    out(i, j) += t1(i, k) * t2(k, j);   // direct accumulation
+                }
+            }
+        }
+        return out;
     }
 
     // Activation Functions

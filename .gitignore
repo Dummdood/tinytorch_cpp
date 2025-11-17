@@ -1,3 +1,19 @@
-.vscode/
+# Out-of-source build directory
+build/
+
+# CMake build files (in case they appear somewhere)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Compiled binaries / libs
 *.o
 *.out
+*.obj
+*.so
+*.dylib
+*.dll
+.vscode/
+tinytorch_demo
+EOF

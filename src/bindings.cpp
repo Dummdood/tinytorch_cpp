@@ -2,13 +2,18 @@
 #include <pybind11/stl.h>
 
 #include "tensor.hpp"
+#include "module.hpp"
+#include "linear.hpp"
+#include "optimizer.hpp"
 
 namespace py = pybind11;
 
 PYBIND11_MODULE(tinytorch_cpp, m) {
     m.doc() = "TinyTorch-CPP Python bindings";
 
-    // Bind Tensor
+    // ----------------------------
+    // Tensor
+    // ----------------------------
     py::class_<Tensor>(m, "Tensor")
         // Constructors
         .def(py::init<int, int, bool>(),
@@ -31,6 +36,7 @@ PYBIND11_MODULE(tinytorch_cpp, m) {
             if (!t.has_grad()) {
                 return py::none();
             }
+            // Expose a reference so Python sees live updates
             return py::cast(std::ref(t.grad()));
         })
 
@@ -54,10 +60,65 @@ PYBIND11_MODULE(tinytorch_cpp, m) {
                    std::to_string(t.cols()) + ")>";
         });
 
-    // Expose mse_loss as a module-level function
+    // mse_loss as a free function
     m.def("mse_loss",
           &Tensor::mse_loss,
           py::arg("pred"),
           py::arg("target"),
           "Mean squared error loss returning a scalar Tensor");
+
+    // ----------------------------
+    // Module base class
+    // ----------------------------
+    py::class_<Module, std::shared_ptr<Module>>(m, "Module")
+        .def("forward", &Module::forward)
+        .def("parameters", &Module::parameters)
+        .def("zero_grad", &Module::zero_grad);
+
+    // ----------------------------
+    // Linear
+    // ----------------------------
+    py::class_<Linear, Module, std::shared_ptr<Linear>>(m, "Linear")
+        .def(py::init<int, int>(),
+             py::arg("in_features"),
+             py::arg("out_features"))
+        .def("forward", &Linear::forward);
+
+    // ----------------------------
+    // Sequential
+    // ----------------------------
+    py::class_<Sequential, Module, std::shared_ptr<Sequential>>(m, "Sequential")
+        .def(py::init<>())
+        .def("add", &Sequential::add)
+        .def("forward", &Sequential::forward)
+        .def("parameters", &Sequential::parameters)
+        .def("zero_grad", &Sequential::zero_grad);
+
+    // ----------------------------
+    // ReLU module
+    // ----------------------------
+    py::class_<ReLU, Module, std::shared_ptr<ReLU>>(m, "ReLU")
+        .def(py::init<>())
+        .def("forward", &ReLU::forward)
+        .def("parameters", &ReLU::parameters);
+
+    // ----------------------------
+    // Sigmoid module
+    // ----------------------------
+    py::class_<Sigmoid, Module, std::shared_ptr<Sigmoid>>(m, "Sigmoid")
+        .def(py::init<>())
+        .def("forward", &Sigmoid::forward)
+        .def("parameters", &Sigmoid::parameters);
+
+    // ----------------------------
+    // SGD optimizer
+    // ----------------------------
+    py::class_<SGD>(m, "SGD")
+        .def(py::init<float>(), py::arg("lr"))
+        // step on parameter list: step(params)
+        .def("step", static_cast<void (SGD::*)(const std::vector<Tensor*>&)>(&SGD::step),
+             py::arg("params"))
+        // step on a Module: step(model)
+        .def("step_module", static_cast<void (SGD::*)(Module&)>(&SGD::step),
+             py::arg("module"));
 }

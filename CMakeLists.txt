@@ -15,7 +15,7 @@ add_subdirectory(extern/pybind11)
 # -------------------------------------------------------------------
 # 2) C++ demo executable (your existing main.cpp)
 # -------------------------------------------------------------------
-add_executable(tinytorch_demo
+add_executable(tinytorch_demo.out
     src/main.cpp
 )
 

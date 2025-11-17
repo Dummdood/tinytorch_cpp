@@ -66,10 +66,12 @@ public:
         cols_(other.cols_),
         vals_(other.vals_),
         requires_grad_(other.requires_grad_),
-        grad_fn_(nullptr)        // copy is disconnected from graph
+        grad_fn_(other.grad_fn_)   // share the same autograd node
     {
-        // Do NOT copy grad_  (copy starts with no gradient)
+        // We do NOT copy grad_ (each Tensor manages its own gradient storage)
+        // grad_ stays null; it will be allocated on first call to grad().
     }
+
 
     // Getters
     int rows() const {
@@ -374,6 +376,41 @@ public:
         }
         return out;
     }
+    void backward() {
+        // Only support scalar outputs for now
+        isScalar();
+
+        // Seed gradient at the root: dL/dL = 1
+        Tensor& root_grad = grad();   // allocates grad_ if needed and zeros it
+        root_grad(0, 0) = 1.0f;
+
+        // DFS stack for reverse graph traversal
+        std::vector<Tensor*> stack;
+        stack.push_back(this);
+
+        while (!stack.empty()) {
+            Tensor* t = stack.back();
+            stack.pop_back();
+
+            // Leaf tensor (no grad_fn_) → nothing to propagate
+            if (!t->grad_fn_) {
+                continue;
+            }
+
+            // Gradient flowing into this tensor
+            const Tensor& grad_out = t->grad();
+
+            // Run this node's backward function
+            t->grad_fn_->backward(grad_out);
+
+            // Push parents to stack if they require gradients
+            for (Tensor* parent : t->grad_fn_->parents) {
+                if (parent && parent->requires_grad_) {
+                    stack.push_back(parent);
+                }
+            }
+        }
+    }
 
     // Activation Functions
     static Tensor relu(const Tensor& t) {
@@ -559,8 +596,8 @@ public:
             cols_ = other.cols_;
             vals_ = other.vals_;
             requires_grad_ = other.requires_grad_;
-            grad_fn_ = nullptr;   // again, break graph links
-            grad_.reset();        // remove old grad
+            grad_fn_ = other.grad_fn_;
+            grad_.reset();
         }
         return *this;
     }

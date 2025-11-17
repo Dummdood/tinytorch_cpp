@@ -1,35 +1,25 @@
-#include <iostream>
 #include "tensor.hpp"
-#include "linear.hpp"
+#include <iostream>
 
 int main() {
-    // // Create a Linear layer: 3 inputs → 2 outputs
-    // Linear layer(3, 2);
+    Tensor x(1, 3, true);
+    x(0, 0) = 0.5f;
+    x(0, 1) = -1.0f;
+    x(0, 2) = 2.0f;
 
-    // // Create an input vector of shape (1 × 3)
-    // Tensor x(1, 3);
-    // x(0, 0) = 0.5f;
-    // x(0, 1) = -1.0f;
-    // x(0, 2) = 2.0f;
+    Tensor y(1, 3);
+    y(0, 0) = 1.0f;
+    y(0, 1) = 0.0f;
+    y(0, 2) = -1.0f;
 
-    // // Forward pass
-    // Tensor y = layer.forward(x);
+    Tensor loss = Tensor::mse_loss(x, y);
+    std::cout << "loss: " << loss(0, 0) << "\n";
 
-    // // Apply softmax for classification
-    // Tensor probs = Tensor::softmax(y);
+    loss.backward();
 
-    // // Print results
-    // std::cout << "Output logits:" << std::endl;
-    // for (int j = 0; j < y.cols(); j++) {
-    //     std::cout << y(0, j) << " ";
-    // }
-    // std::cout << std::endl;
-
-    // std::cout << "Softmax probabilities:" << std::endl;
-    // for (int j = 0; j < probs.cols(); j++) {
-    //     std::cout << probs(0, j) << " ";
-    // }
-    // std::cout << std::endl;
-
-    return 0;
+    Tensor& g = x.grad();
+    std::cout << "grad: "
+              << g(0, 0) << " "
+              << g(0, 1) << " "
+              << g(0, 2) << "\n";
 }

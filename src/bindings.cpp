@@ -115,10 +115,7 @@ PYBIND11_MODULE(tinytorch_cpp, m) {
     // ----------------------------
     py::class_<SGD>(m, "SGD")
         .def(py::init<float>(), py::arg("lr"))
-        // step on parameter list: step(params)
-        .def("step", static_cast<void (SGD::*)(const std::vector<Tensor*>&)>(&SGD::step),
-             py::arg("params"))
-        // step on a Module: step(model)
-        .def("step_module", static_cast<void (SGD::*)(Module&)>(&SGD::step),
-             py::arg("module"));
+        .def("step", [](SGD& opt, Module& m) {
+            opt.step(m);
+        }, py::arg("module"));
 }

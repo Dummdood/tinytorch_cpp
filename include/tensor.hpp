@@ -6,28 +6,56 @@
 #include <utility>
 #include <vector>
 
-#include "node.hpp"
 
+// Forward declarations
+class Tensor;         // forward
+struct TensorImpl;    // forward
+
+struct Node {
+    // Each parent is identified by the shared impl it uses
+    std::vector<std::shared_ptr<TensorImpl>> parents;
+    std::function<void(const Tensor&)> backward;
+};
+
+// Shared implementation object
+struct TensorImpl {
+    int rows;
+    int cols;
+    std::vector<float> vals;
+
+    bool requires_grad;
+    std::unique_ptr<Tensor> grad;       // gradient storage
+    std::shared_ptr<Node> grad_fn;      // autograd node
+
+    TensorImpl(int r, int c, bool req)
+        : rows(r),
+          cols(c),
+          vals(r * c),
+          requires_grad(req),
+          grad(nullptr),
+          grad_fn(nullptr)
+    {}
+
+    ~TensorImpl(); // defined after Tensor
+};
 
 class Tensor {
-    // Data members
-    int rows_;
-    int cols_;
-    std::vector<float> vals_;
+    // Single data member: handle to shared impl
+    std::shared_ptr<TensorImpl> impl_;
 
-    bool requires_grad_ = false;
-    std::unique_ptr<Tensor> grad_;
-    std::shared_ptr<Node> grad_fn_ = nullptr;
+    // Allow autograd to re-wrap an existing impl
+    explicit Tensor(std::shared_ptr<TensorImpl> impl)
+        : impl_(std::move(impl)) {}
 
     // Getters
     int getIndex(int row, int col) const {
-        if (row >= 0 && row < rows_ && col >= 0 && col < cols_) {
-            return row * cols_ + col;
+        if (row >= 0 && row < impl_->rows && col >= 0 && col < impl_->cols) {
+            return row * impl_->cols + col;
         }
         throw std::invalid_argument(
             "Tensor: index (" + std::to_string(row) + ", " + std::to_string(col) +
-            ") is out of bounds for shape (" + std::to_string(rows_) +
-            ", " + std::to_string(cols_) + ")."
+            ") is out of bounds for shape (" + std::to_string(impl_->rows) +
+            ", " + std::to_string(impl_->cols) + ")."
         );
     }
 
@@ -38,103 +66,86 @@ class Tensor {
         }
     }
     static void tMatch(const Tensor& t1, const Tensor& t2) {
-        if (t1.rows_ != t2.rows_ || t1.cols_ != t2.cols_) {
+        if (t1.rows() != t2.rows() || t1.cols() != t2.cols()) {
             throw std::invalid_argument("Tensor: shapes must match.");
         }
     }
     static void matmulMatch(const Tensor& t1, const Tensor& t2) {
-        if (t1.cols_ != t2.rows_) {
+        if (t1.cols() != t2.rows()) {
             throw std::invalid_argument("Tensor: matmul dimension mismatch (t1.cols != t2.rows).");
         }
     }
     void isScalar() const {
-        if (rows_ != 1 || cols_ != 1) {
+        if (impl_->rows != 1 || impl_->cols != 1) {
             throw std::runtime_error("item() only valid for scalar tensors");
         }
     }
 
 public:
     // Constructors
-    explicit Tensor(int rows, int cols, bool flag = false) 
-        : rows_(rows), cols_(cols), requires_grad_(flag) {
+    explicit Tensor(int rows, int cols, bool requires_grad = false)
+        : impl_(std::make_shared<TensorImpl>(rows, cols, requires_grad)) {
         initCheck(rows, cols);
-        vals_.resize(rows * cols);
-    }
-    // Copy constructor
-    Tensor(const Tensor& other)
-        : rows_(other.rows_),
-        cols_(other.cols_),
-        vals_(other.vals_),
-        requires_grad_(other.requires_grad_),
-        grad_fn_(other.grad_fn_)   // share the same autograd node
-    {
-        // We do NOT copy grad_ (each Tensor manages its own gradient storage)
-        // grad_ stays null; it will be allocated on first call to grad().
     }
 
+    // Defaulted copy/move: share impl_
+    Tensor(const Tensor&) = default;
+    Tensor(Tensor&&) noexcept = default;
+    Tensor& operator=(const Tensor&) = default;
+    Tensor& operator=(Tensor&&) noexcept = default;
 
-    // Getters
-    int rows() const {
-        return rows_;
-    }
-    int cols() const {
-        return cols_;
-    }
-    int numel() const {
-        return rows_ * cols_;
-    }
-    bool requires_grad() const {
-        return requires_grad_;
-    }
-    bool has_grad() const {
-        return static_cast<bool>(grad_);
-    }
+
+    // Basic Getters
+    int rows() const { return impl_->rows; }
+    int cols() const { return impl_->cols; }
+    int numel() const { return impl_->rows * impl_->cols; }
+    float item() const { isScalar(); return (*this)(0, 0); }
+
+    // Grad Getters
+    bool requires_grad() const { return impl_->requires_grad; }
+    bool has_grad() const { return static_cast<bool>(impl_->grad); }
     const Tensor& grad() const {
-        if (!grad_) {
+        if (!impl_->grad) {
             throw std::runtime_error("Tensor has no gradient yet");
         }
-        return *grad_;
+        return *impl_->grad;
     }
     Tensor& grad() {
-        if (!grad_) {
-            grad_ = std::make_unique<Tensor>(rows_, cols_);
-            // // Initialize to 0
-            for (int i = 0; i < rows_; ++i)
-                for (int j = 0; j < cols_; ++j)
-                    grad_->operator()(i, j) = 0.0f;
+        if (!impl_->grad) {
+            impl_->grad = std::make_unique<Tensor>(rows(), cols(), false);
+            Tensor& g = *impl_->grad;
+            for (int i = 0; i < rows(); ++i)
+                for (int j = 0; j < cols(); ++j)
+                    g(i, j) = 0.0f;
         }
-        return *grad_;
+        return *impl_->grad;
     }
-    bool is_leaf() const {
-        return grad_fn_ == nullptr && requires_grad_;
-    }
-    std::shared_ptr<Node> grad_fn() const {
-        return grad_fn_;
-    }
-    float item() const {
-        isScalar();
-        return (*this)(0, 0);
-    }
+    std::shared_ptr<Node> grad_fn() const { return impl_->grad_fn; }
 
     // Setters
-    void set_requires_grad(bool grad) {
-        requires_grad_ = grad;
-    }
+    void set_requires_grad(bool grad) { impl_->requires_grad = grad; }
+    void set_grad_fn(const std::shared_ptr<Node>& fn) { impl_->grad_fn = fn; }
     void zero_grad() {
-        if (grad_) {
-            for (int i = 0; i < rows_; ++i)
-                for (int j = 0; j < cols_; ++j)
-                    grad_->operator()(i, j) = 0.0f;
+        if (impl_->grad) {
+            Tensor& g = *impl_->grad;
+            for (int i = 0; i < rows(); ++i)
+                for (int j = 0; j < cols(); ++j)
+                    g(i, j) = 0.0f;
         }
     }
-    void set_grad_fn(std::shared_ptr<Node> fn) {
-        grad_fn_ = std::move(fn);
+
+    // Element access
+    float& operator()(int row, int col) {
+        return impl_->vals[getIndex(row, col)];
+    }
+    const float& operator()(int row, int col) const {
+        return impl_->vals[getIndex(row, col)];
     }
 
     // Factories
     static Tensor full(int rows, int cols, float value) {
         Tensor t(rows, cols);
-        std::fill(t.vals_.begin(), t.vals_.end(), value);
+        std::fill(t.impl_->vals.begin(), t.impl_->vals.end(), value);
         return t;
     }
     static Tensor zeros(int rows, int cols) {
@@ -147,7 +158,7 @@ public:
         Tensor t(rows, cols);
         static std::mt19937 gen(12345);
         std::normal_distribution<float> dist(0.0f, 1.0f);
-        for (float& val : t.vals_) {
+        for (float& val : t.impl_->vals) {
             val = dist(gen);
         }
         return t;
@@ -156,160 +167,168 @@ public:
         Tensor t(rows, cols);
         static std::mt19937 gen(12345);
         std::normal_distribution<float> dist(mean, stdev);
-        for (float& val : t.vals_) {
+        for (float& val : t.impl_->vals) {
             val = dist(gen);
         }
         return t;
     }
 
     // Operations Overloads
-    float& operator()(int row, int col) {
-        return vals_[getIndex(row, col)];
-    }
-    const float& operator()(int row, int col) const {
-        return vals_[getIndex(row, col)];
-    }
     static Tensor add(const Tensor& t1, const Tensor& t2) {
         tMatch(t1, t2);
-        int R = t1.rows_, C = t1.cols_;
+        int R = t1.rows();
+        int C = t1.cols();
 
+        // Forward
         Tensor sum(R, C);
         std::transform(
-            t1.vals_.begin(), t1.vals_.end(),
-            t2.vals_.begin(),
-            sum.vals_.begin(),
+            t1.impl_->vals.begin(), t1.impl_->vals.end(),
+            t2.impl_->vals.begin(),
+            sum.impl_->vals.begin(),
             std::plus<float>()
         );
 
-        bool grad = t1.requires_grad_ || t2.requires_grad_;
+        bool grad = t1.requires_grad() || t2.requires_grad();
         if (!grad) {
             return sum;
         }
 
         auto node = std::make_shared<Node>();
-        node->parents = {
-            const_cast<Tensor*>(&t1),
-            const_cast<Tensor*>(&t2)
-        };
+        node->parents = { t1.impl_, t2.impl_ };
 
         node->backward =
-            [p1 = const_cast<Tensor*>(&t1),
-            p2 = const_cast<Tensor*>(&t2),
-            R, C](const Tensor& grad_out)
+            [t1_impl = t1.impl_, t2_impl = t2.impl_, R, C](const Tensor& grad_out)
         {
-            if (p1->requires_grad_) {
-                Tensor& g1 = p1->grad();
-                for (int i = 0; i < R; ++i)
-                    for (int j = 0; j < C; ++j)
+            Tensor t1(t1_impl);
+            Tensor t2(t2_impl);
+
+            // dL/dt1 += grad_out
+            if (t1.requires_grad()) {
+                Tensor& g1 = t1.grad();
+                for (int i = 0; i < R; ++i) {
+                    for (int j = 0; j < C; ++j) {
                         g1(i, j) += grad_out(i, j);
+                    }
+                }
             }
 
-            if (p2->requires_grad_) {
-                Tensor& g2 = p2->grad();
-                for (int i = 0; i < R; ++i)
-                    for (int j = 0; j < C; ++j)
+            // dL/dt2 += grad_out
+            if (t2.requires_grad()) {
+                Tensor& g2 = t2.grad();
+                for (int i = 0; i < R; ++i) {
+                    for (int j = 0; j < C; ++j) {
                         g2(i, j) += grad_out(i, j);
-            }
-        };
-
-        sum.requires_grad_ = true;
-        sum.set_grad_fn(node);
-
-        return sum;
-    }
-    static Tensor sum(const Tensor& t) {
-        // Forward: scalar (1×1)
-        Tensor out(1, 1);
-        float total = std::accumulate(t.vals_.begin(), t.vals_.end(), 0.0f);
-        out(0, 0) = total;
-
-        // Autograd?
-        if (!t.requires_grad_) {
-            return out;
-        }
-
-        auto node = std::make_shared<Node>();
-        node->parents = { const_cast<Tensor*>(&t) };
-
-        node->backward =
-            [p = const_cast<Tensor*>(&t),
-            R = t.rows_, C = t.cols_](const Tensor& grad_out)
-        {
-            if (!p->requires_grad_) return;
-
-            float g_scalar = grad_out(0, 0);  // dL/d(sum) is scalar
-
-            Tensor& g = p->grad();
-            for (int i = 0; i < R; ++i) {
-                for (int j = 0; j < C; ++j) {
-                    g(i, j) += g_scalar;   // same gradient for every element
+                    }
                 }
             }
         };
 
-        out.requires_grad_ = true;
+        Tensor sum_autograd(R, C, true);
+        sum_autograd.impl_->vals = sum.impl_->vals;
+        sum_autograd.set_grad_fn(node);
+        return sum_autograd;
+    }
+    static Tensor sum(const Tensor& t) {
+        // Forward: scalar (1×1)
+        Tensor out(1, 1, t.requires_grad());
+        float total = std::accumulate(
+            t.impl_->vals.begin(),
+            t.impl_->vals.end(),
+            0.0f
+        );
+        out(0, 0) = total;
+
+        if (!t.requires_grad()) {
+            return out;
+        }
+
+        auto node = std::make_shared<Node>();
+        node->parents = { t.impl_ };
+
+        int R = t.rows();
+        int C = t.cols();
+
+        node->backward =
+            [t_impl = t.impl_, R, C](const Tensor& grad_out)
+        {
+            Tensor t(t_impl);
+            if (!t.requires_grad()) return;
+
+            float g_scalar = grad_out(0, 0);  // dL/d(sum) is scalar
+
+            Tensor& g = t.grad();
+            for (int i = 0; i < R; ++i) {
+                for (int j = 0; j < C; ++j) {
+                    g(i, j) += g_scalar;  // same gradient for every element
+                }
+            }
+        };
+
+        out.set_requires_grad(true);
         out.set_grad_fn(node);
         return out;
     }
     static Tensor mul(const Tensor& t1, const Tensor& t2) {
         tMatch(t1, t2);
-        int R = t1.rows_, C = t1.cols_;
+        int R = t1.rows();
+        int C = t1.cols();
 
         // Forward
         Tensor prod(R, C);
         std::transform(
-            t1.vals_.begin(), t1.vals_.end(),
-            t2.vals_.begin(),
-            prod.vals_.begin(),
+            t1.impl_->vals.begin(), t1.impl_->vals.end(),
+            t2.impl_->vals.begin(),
+            prod.impl_->vals.begin(),
             std::multiplies<float>()
         );
 
-        // Autograd?
-        bool requires = t1.requires_grad_ || t2.requires_grad_;
+        bool requires = t1.requires_grad() || t2.requires_grad();
         if (!requires) {
             return prod;
         }
 
         auto node = std::make_shared<Node>();
-        node->parents = {
-            const_cast<Tensor*>(&t1),
-            const_cast<Tensor*>(&t2)
-        };
+        // Parents identified by their impl handles
+        node->parents = { t1.impl_, t2.impl_ };
 
         node->backward =
-            [p1 = const_cast<Tensor*>(&t1),
-            p2 = const_cast<Tensor*>(&t2),
-            R, C](const Tensor& grad_out)
+            [t1_impl = t1.impl_, t2_impl = t2.impl_, R, C](const Tensor& grad_out)
         {
+            Tensor t1(t1_impl);
+            Tensor t2(t2_impl);
+
             // dL/dt1 += grad_out * t2
-            if (p1->requires_grad_) {
-                Tensor& g1 = p1->grad();
+            if (t1.requires_grad()) {
+                Tensor& g1 = t1.grad();
                 for (int i = 0; i < R; ++i) {
                     for (int j = 0; j < C; ++j) {
-                        g1(i, j) += grad_out(i, j) * (*p2)(i, j);
+                        g1(i, j) += grad_out(i, j) * t2(i, j);
                     }
                 }
             }
 
             // dL/dt2 += grad_out * t1
-            if (p2->requires_grad_) {
-                Tensor& g2 = p2->grad();
+            if (t2.requires_grad()) {
+                Tensor& g2 = t2.grad();
                 for (int i = 0; i < R; ++i) {
                     for (int j = 0; j < C; ++j) {
-                        g2(i, j) += grad_out(i, j) * (*p1)(i, j);
+                        g2(i, j) += grad_out(i, j) * t1(i, j);
                     }
                 }
             }
         };
 
-        prod.requires_grad_ = true;
+        prod.set_requires_grad(true);
         prod.set_grad_fn(node);
         return prod;
     }
     static Tensor matmul(const Tensor& t1, const Tensor& t2) {
         matmulMatch(t1, t2);
-        int M = t1.rows_, K = t1.cols_, N = t2.cols_;
+        int M = t1.rows();
+        int K = t1.cols();
+        int N = t2.cols();
 
+        // Forward: out = t1 @ t2
         Tensor out = zeros(M, N);
         for (int i = 0; i < M; ++i) {
             for (int j = 0; j < N; ++j) {
@@ -321,92 +340,99 @@ public:
             }
         }
 
-        bool requires = t1.requires_grad_ || t2.requires_grad_;
+        bool requires = t1.requires_grad() || t2.requires_grad();
         if (!requires) {
             return out;
         }
 
         auto node = std::make_shared<Node>();
-        node->parents = {
-            const_cast<Tensor*>(&t1),
-            const_cast<Tensor*>(&t2)
-        };
+        // Store parents by their shared impl handles
+        node->parents = { t1.impl_, t2.impl_ };
 
         node->backward =
-            [pA = const_cast<Tensor*>(&t1),
-            pB = const_cast<Tensor*>(&t2),
-            M, K, N](const Tensor& grad_out)
+            [A_impl = t1.impl_, B_impl = t2.impl_, M, K, N](const Tensor& grad_out)
         {
+            // Wrap impls into Tensor handles
+            Tensor A(A_impl);
+            Tensor B(B_impl);
+
             // grad_out shape: (M × N)
 
-            // dA = grad_out.matmul(Bᵀ)
-            if (pA->requires_grad_) {
-                Tensor Bt = pB->transpose();             // (N × K)
-                Tensor dA = matmul(grad_out, Bt);        // (M × K)
-
-                Tensor& gA = pA->grad();                 // accumulate
-                for (int i = 0; i < M; ++i)
-                    for (int j = 0; j < K; ++j)
-                        gA(i, j) += dA(i, j);
+            // dA = grad_out @ Bᵀ
+            if (A.requires_grad()) {
+                Tensor& gA = A.grad();  // shape (M × K)
+                for (int i = 0; i < M; ++i) {
+                    for (int k = 0; k < K; ++k) {
+                        float acc = 0.0f;
+                        for (int j = 0; j < N; ++j) {
+                            acc += grad_out(i, j) * B(k, j); // Bᵀ(j,k) = B(k,j)
+                        }
+                        gA(i, k) += acc;
+                    }
+                }
             }
 
-            // dB = Aᵀ.matmul(grad_out)
-            if (pB->requires_grad_) {
-                Tensor At = pA->transpose();             // (K × M)
-                Tensor dB = matmul(At, grad_out);        // (K × N)
-
-                Tensor& gB = pB->grad();                 // accumulate
-                for (int i = 0; i < K; ++i)
-                    for (int j = 0; j < N; ++j)
-                        gB(i, j) += dB(i, j);
+            // dB = Aᵀ @ grad_out
+            if (B.requires_grad()) {
+                Tensor& gB = B.grad();  // shape (K × N)
+                for (int k = 0; k < K; ++k) {
+                    for (int j = 0; j < N; ++j) {
+                        float acc = 0.0f;
+                        for (int i = 0; i < M; ++i) {
+                            acc += A(i, k) * grad_out(i, j); // Aᵀ(k,i) = A(i,k)
+                        }
+                        gB(k, j) += acc;
+                    }
+                }
             }
         };
 
-        out.requires_grad_ = true;
+        out.set_requires_grad(true);
         out.set_grad_fn(node);
-
         return out;
     }
     Tensor transpose() const {
-        Tensor out(cols_, rows_);
-        for (int i = 0; i < rows_; ++i) {
-            for (int j = 0; j < cols_; ++j) {
+        int rows = impl_->rows, cols = impl_->cols;
+        Tensor out(cols, rows);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
                 out(j, i) = (*this)(i, j);
             }
         }
         return out;
     }
     void backward() {
-        // Only support scalar outputs for now
         isScalar();
 
-        // Seed gradient at the root: dL/dL = 1
-        Tensor& root_grad = grad();   // allocates grad_ if needed and zeros it
+        // Seed gradient of the root
+        Tensor& root_grad = grad();
         root_grad(0, 0) = 1.0f;
 
-        // DFS stack for reverse graph traversal
-        std::vector<Tensor*> stack;
-        stack.push_back(this);
+        // Worklist over TensorImpl handles
+        std::vector<std::shared_ptr<TensorImpl>> stack;
+        stack.push_back(impl_);
 
         while (!stack.empty()) {
-            Tensor* t = stack.back();
+            auto cur_impl = stack.back();
             stack.pop_back();
 
-            // Leaf tensor (no grad_fn_) → nothing to propagate
-            if (!t->grad_fn_) {
-                continue;
-            }
+            if (!cur_impl) continue;
 
-            // Gradient flowing into this tensor
-            const Tensor& grad_out = t->grad();
+            Tensor t(cur_impl);               // wrap impl in a Tensor handle
+            auto node = cur_impl->grad_fn;    // autograd node
+            if (!node) continue;
 
-            // Run this node's backward function
-            t->grad_fn_->backward(grad_out);
+            const Tensor& grad_out = t.grad();  // dL/dt
 
-            // Push parents to stack if they require gradients
-            for (Tensor* parent : t->grad_fn_->parents) {
-                if (parent && parent->requires_grad_) {
-                    stack.push_back(parent);
+            // Call node-specific backward
+            node->backward(grad_out);
+
+            // Traverse parents by impl handle
+            for (auto& parent_impl : node->parents) {
+                if (!parent_impl) continue;
+                Tensor parent(parent_impl);
+                if (parent.requires_grad()) {
+                    stack.push_back(parent_impl);
                 }
             }
         }
@@ -414,122 +440,91 @@ public:
 
     // Activation Functions
     static Tensor relu(const Tensor& t) {
-        int R = t.rows_, C = t.cols_;
+        int R = t.rows(), C = t.cols();
 
         // Forward
         Tensor out(R, C);
         std::transform(
-            t.vals_.begin(),
-            t.vals_.end(),
-            out.vals_.begin(),
+            t.impl_->vals.begin(),
+            t.impl_->vals.end(),
+            out.impl_->vals.begin(),
             [](float x) { return x > 0.0f ? x : 0.0f; }
         );
 
         // Autograd?
-        if (!t.requires_grad_) {
-            return out;
+        if (!t.requires_grad()) { 
+            return out; 
         }
 
         auto node = std::make_shared<Node>();
-        node->parents = { const_cast<Tensor*>(&t) };
+        node->parents = { t.impl_ };
 
         node->backward =
-            [p = const_cast<Tensor*>(&t), R, C](const Tensor& grad_out)
+            [t_impl = t.impl_, R, C](const Tensor& grad_out)
         {
-            if (!p->requires_grad_) return;
+            Tensor t(t_impl);
+            if (!t.requires_grad()) return;
 
-            Tensor& g = p->grad();
+            Tensor& g = t.grad();
             for (int i = 0; i < R; ++i) {
                 for (int j = 0; j < C; ++j) {
-                    float x = (*p)(i, j);
+                    float x = t(i, j);
                     float mask = (x > 0.0f) ? 1.0f : 0.0f;
                     g(i, j) += grad_out(i, j) * mask;
                 }
             }
         };
 
-        out.requires_grad_ = true;
+        out.set_requires_grad(true);
         out.set_grad_fn(node);
         return out;
     }
     static Tensor sigmoid(const Tensor& t) {
-        int R = t.rows_, C = t.cols_;
+        int R = t.rows(), C = t.cols();
 
         // Forward
         Tensor out(R, C);
         std::transform(
-            t.vals_.begin(),
-            t.vals_.end(),
-            out.vals_.begin(),
+            t.impl_->vals.begin(),
+            t.impl_->vals.end(),
+            out.impl_->vals.begin(),
             [](float x) { return 1.0f / (1.0f + std::exp(-x)); }
         );
 
         // Autograd?
-        if (!t.requires_grad_) {
+        if (!t.requires_grad()) {
             return out;
         }
 
         auto node = std::make_shared<Node>();
-        node->parents = { const_cast<Tensor*>(&t) };
+        node->parents = { t.impl_ };
 
         node->backward =
-            [p = const_cast<Tensor*>(&t), R, C](const Tensor& grad_out)
+            [t_impl = t.impl_, R, C](const Tensor& grad_out)
         {
-            if (!p->requires_grad_) return;
+            Tensor t(t_impl);
+            if (!t.requires_grad()) return;
 
-            Tensor& g = p->grad();
+            Tensor& g = t.grad();
             for (int i = 0; i < R; ++i) {
                 for (int j = 0; j < C; ++j) {
-                    float x = (*p)(i, j);
+                    float x = t(i, j);
                     float s = 1.0f / (1.0f + std::exp(-x));
                     g(i, j) += grad_out(i, j) * s * (1.0f - s);
                 }
             }
         };
 
-        out.requires_grad_ = true;
+        out.set_requires_grad(true);
         out.set_grad_fn(node);
         return out;
     }
-
-    // Requires autograd support
-
-    // static Tensor tanh(const Tensor& t) {
-    //     Tensor out(t.rows_, t.cols_);
-    //     std::transform(
-    //         t.vals_.begin(),
-    //         t.vals_.end(),
-    //         out.vals_.begin(),
-    //         [](float x) { return std::tanh(x); }
-    //     );
-    //     return out;
-    // }
-    // static Tensor softmax(const Tensor& t) {
-    //     float max_logit = *std::max_element(t.vals_.begin(), t.vals_.end());
-
-    //     Tensor expT(t.rows_, t.cols_);
-    //     std::transform(
-    //         t.vals_.begin(),
-    //         t.vals_.end(),
-    //         expT.vals_.begin(),
-    //         [max_logit](float x) { return std::exp(x - max_logit); }
-    //     );
-
-    //     float sum_exp = std::accumulate(expT.vals_.begin(), expT.vals_.end(), 0.0f);
-    //     std::transform(
-    //         expT.vals_.begin(),
-    //         expT.vals_.end(),
-    //         expT.vals_.begin(),
-    //         [sum_exp](float x) { return x / sum_exp ; }
-    //     );
-    //     return expT;
-    // }
     
     // Loss Functions
     static Tensor mse_loss(const Tensor& pred, const Tensor& target) {
         // Shape check
         tMatch(pred, target);
-        int R = pred.rows_, C = pred.cols_;
+        int R = pred.rows(), C = pred.cols();
         int N = R * C;
 
         // ---- Forward: scalar loss ----
@@ -544,64 +539,52 @@ public:
         out(0, 0) = total / static_cast<float>(N);
 
         // ---- Autograd? ----
-        bool requires = pred.requires_grad_ || target.requires_grad_;
-        if (!requires) {
-            return out;
+        bool requires = pred.requires_grad() || target.requires_grad();
+        if (!requires) { 
+            return out; 
         }
 
         auto node = std::make_shared<Node>();
-        node->parents = {
-            const_cast<Tensor*>(&pred),
-            const_cast<Tensor*>(&target)
-        };
+        node->parents = { pred.impl_, target.impl_ };
 
         node->backward =
-            [p = const_cast<Tensor*>(&pred),
-             t = const_cast<Tensor*>(&target),
-             R, C, N](const Tensor& grad_out)
+            [p_impl = pred.impl_, t_impl = target.impl_, R, C, N](const Tensor& grad_out)
         {
+            Tensor p(p_impl);
+            Tensor t(t_impl);
+
             float g = grad_out(0, 0);  // upstream grad (scalar)
             float scale = (2.0f * g) / static_cast<float>(N);
 
             // dL/dpred
-            if (p->requires_grad_) {
-                Tensor& gp = p->grad();
+            if (p.requires_grad()) {
+                Tensor& gp = p.grad();
                 for (int i = 0; i < R; ++i) {
                     for (int j = 0; j < C; ++j) {
-                        float diff = (*p)(i, j) - (*t)(i, j);
+                        float diff = p(i, j) - t(i, j);
                         gp(i, j) += scale * diff;
                     }
                 }
             }
 
             // dL/dtarget
-            if (t->requires_grad_) {
-                Tensor& gt = t->grad();
+            if (t.requires_grad()) {
+                Tensor& gt = t.grad();
                 for (int i = 0; i < R; ++i) {
                     for (int j = 0; j < C; ++j) {
-                        float diff = (*p)(i, j) - (*t)(i, j);
+                        float diff = p(i, j) - t(i, j);
                         gt(i, j) += -scale * diff;
                     }
                 }
             }
         };
 
-        out.requires_grad_ = true;
+        out.set_requires_grad(true);
         out.set_grad_fn(node);
         return out;
     }
-    Tensor& operator=(const Tensor& other) {
-        if (this != &other) {
-            rows_ = other.rows_;
-            cols_ = other.cols_;
-            vals_ = other.vals_;
-            requires_grad_ = other.requires_grad_;
-            grad_fn_ = other.grad_fn_;
-            grad_.reset();
-        }
-        return *this;
-    }
 };
+inline TensorImpl::~TensorImpl() = default;
 
 // Operation Overloads
 inline Tensor operator+(const Tensor& t1, const Tensor& t2) {

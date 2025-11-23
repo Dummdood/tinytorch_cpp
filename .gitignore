@@ -17,3 +17,6 @@ Makefile
 .vscode/
 tinytorch_demo
 EOF
+
+__pycache__/
+*.pyc

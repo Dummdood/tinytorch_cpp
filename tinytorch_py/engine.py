@@ -13,7 +13,7 @@ class Engine:
         if node is None or node in visited:
             return
         visited.add(node)
-        for parent in getattr(node, "next_functions", []):
+        for parent in getattr(node, "parents", []):
             if parent is not None:
                 Engine._build_topo(parent, visited, topo)
         topo.append(node)
@@ -51,7 +51,7 @@ class Engine:
             grads_to_parents = node.apply(g)
 
             # Propagate to parents
-            for parent, pg in zip(node.next_functions, grads_to_parents):
+            for parent, pg in zip(node.parents, grads_to_parents):
                 if parent is None or pg is None:
                     continue
                 node_grads[parent] = node_grads.get(parent, 0) + pg
@@ -73,5 +73,5 @@ class Engine:
             label += f" -> Tensor(id={id(node.tensor)})"
         print(" " * indent + label)
 
-        for parent in getattr(node, "next_functions", []):
+        for parent in getattr(node, "parents", []):
             Engine.print_graph(parent, indent + 2, visited)

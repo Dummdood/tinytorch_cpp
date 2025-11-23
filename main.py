@@ -3,6 +3,7 @@ import numpy as np
 from tinytorch_py.tensor import Tensor
 from tinytorch_py.optim.sgd import SGD
 from tinytorch_py.nn.mlp import MLP
+from tinytorch_py.losses import mse_loss
 
 
 def simple_test():
@@ -22,9 +23,7 @@ def simple_test():
         z = z + b
         y_pred = z.sigmoid()
 
-        diff = y_pred - y_true
-        loss = diff * diff
-
+        loss = mse_loss(y_pred, y_true)
         loss.backward()
 
         print(
@@ -55,9 +54,8 @@ def mlp_test():
         optimizer.zero_grad()
 
         y_pred = model(x)
-        diff = y_pred - y_true
-        loss = diff * diff
 
+        loss = mse_loss(y_pred, y_true)
         loss.backward()
 
         print(f"[mlp] step {step} | loss = {loss.data}")

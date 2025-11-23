@@ -8,8 +8,13 @@ if TYPE_CHECKING:
 from .engine import Engine
 from .backward_nodes import (
     Context,
-    AddBackward, SubBackward, MulBackward, DivBackward, MatMulBackward,
-    ReluBackward, SigmoidBackward,
+    # Binary Ops
+    AddBackward, SubBackward, MulBackward,
+    DivBackward, MatMulBackward, PowBackward,
+    # Unary Ops
+    ReluBackward, SigmoidBackward, ExpBackward, 
+    LogBackward, SumBackward, MeanBackward,
+    # Leaf Node Op
     AccumulateGrad
 )
 
@@ -72,7 +77,7 @@ class Tensor:
         b_shape = b.shape
 
         # Strict elementwise ops
-        if op_name in ("add", "sub", "mul", "div"):
+        if op_name in ("add", "sub", "mul", "div", "pow"):
             if a_shape != b_shape:
                 raise ValueError(
                     f"Shape mismatch in {op_name}: "
@@ -127,7 +132,7 @@ class Tensor:
         
         parent_a = Tensor.__make_parent_fn(self)
         parent_b = Tensor.__make_parent_fn(t2)
-        node.next_functions = [parent_a, parent_b]
+        node.parents = [parent_a, parent_b]
 
         out = Tensor(out, requires_grad=True, grad_fn=node)
         return out
@@ -144,10 +149,12 @@ class Tensor:
         node.ctx = ctx
 
         parent = Tensor.__make_parent_fn(self)
-        node.next_functions = [parent]
+        node.parents = [parent]
 
         return Tensor(out, requires_grad=True, grad_fn=node)
     
+    # ------ Binary Ops ------
+
     def __add__(self, other: "Tensor"):
         return self.__binary_op(other, AddBackward, lambda a, b: a + b)
     
@@ -163,8 +170,25 @@ class Tensor:
     def __matmul__(self, other: "Tensor"):
         return self.__binary_op(other, MatMulBackward, lambda a, b: a @ b)
     
+    def __pow__(self, exponent: "Tensor") -> "Tensor":
+        return self.__binary_op(exponent, PowBackward, lambda a, b: a ** b)
+    
+    # ------ Unary Ops ------
+    
     def relu(self):
         return self.__unary_op(ReluBackward, lambda x: np.maximum(0, x))
 
     def sigmoid(self):
         return self.__unary_op(SigmoidBackward, lambda x: 1.0 / (1.0 + np.exp(-x)))
+    
+    def exp(self) -> "Tensor":
+        return self.__unary_op(ExpBackward, lambda x: np.exp(x))
+
+    def log(self) -> "Tensor":
+        return self.__unary_op(LogBackward, lambda x: np.log(x))
+    
+    def sum(self) -> "Tensor":
+        return self.__unary_op(SumBackward, lambda x: np.array([[x.sum()]]))
+
+    def mean(self) -> "Tensor":
+        return self.__unary_op(MeanBackward, lambda x: np.array([[x.mean()]]))

@@ -14,7 +14,7 @@ class Context:
 
 class Node:
     def __init__(self):
-        self.next_functions: Node = []
+        self.parents: Node = []
         self.ctx: Context = None
 
     def apply(self, grad_output: "np.ndarray"):
@@ -68,6 +68,24 @@ class MatMulBackward(BinaryOpBackward):
         grad_b = a.data.T @ grad_output if b.requires_grad else None
         return grad_a, grad_b
 
+class PowBackward(BinaryOpBackward):
+    def _compute_grads(self, a: "Tensor", b: "Tensor", grad_output: np.ndarray):
+        base = a.data
+        exponent = b.data
+
+        grad_a = None
+        grad_b = None
+
+        # d/d base (base**exponent) = exponent * base**(exponent - 1)
+        if a.requires_grad:
+            grad_a = grad_output * exponent * (base ** (exponent - 1))
+
+        # d/d exponent (base**exponent) = base**exponent * log(base)
+        # (undefined for base <= 0)
+        if b.requires_grad:
+            grad_b = grad_output * (base ** exponent) * np.log(base)
+
+        return grad_a, grad_b
 
 # ------ Unary Ops ------
 
@@ -94,6 +112,35 @@ class SigmoidBackward(UnaryOpBackward):
         sig = 1.0 / (1.0 + np.exp(-a.data))
         return grad_output * sig * (1.0 - sig)
     
+class ExpBackward(UnaryOpBackward):
+    def _compute_grad(self, a: "Tensor", grad_output: np.ndarray):
+        if not a.requires_grad:
+            return None
+        # d/dx exp(x) = exp(x)
+        return grad_output * np.exp(a.data)
+
+class LogBackward(UnaryOpBackward):
+    def _compute_grad(self, a: "Tensor", grad_output: np.ndarray):
+        if not a.requires_grad:
+            return None
+        # d/dx log(x) = 1/x  (user’s responsibility to avoid x<=0)
+        return grad_output * (1.0 / a.data)
+
+class SumBackward(UnaryOpBackward):
+    def _compute_grad(self, a: "Tensor", grad_output: np.ndarray):
+        if not a.requires_grad:
+            return None
+        # y = sum(x_ij); dy/dx_ij = 1 → gradient is grad_output broadcasted
+        return grad_output * np.ones_like(a.data)
+
+class MeanBackward(UnaryOpBackward):
+    def _compute_grad(self, a: "Tensor", grad_output: np.ndarray):
+        if not a.requires_grad:
+            return None
+        # y = (1/N) * sum(x_ij); dy/dx_ij = 1/N
+        N = a.data.size
+        return grad_output * (np.ones_like(a.data) / N)
+
 
 # ------ Leaf Node ------
 

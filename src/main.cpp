@@ -1,16 +1,11 @@
 #include "tensor.hpp"
+#include "loss.hpp"
 #include "nn.hpp"
 
 #include <iostream>
 #include <vector>
 
 using namespace autodiff;
-
-TensorPtr mse_loss(const TensorPtr& y_pred, const TensorPtr& y_true) {
-    auto diff = Tensor::sub(y_pred, y_true);  // (1x1)
-    auto sq   = Tensor::mul(diff, diff);      // (1x1)
-    return sq;
-}
 
 int main() {
     std::cout << "=== 2D linear regression with tiny MLP ===\n";

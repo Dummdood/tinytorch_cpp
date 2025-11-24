@@ -1,13 +1,100 @@
-// tensor.cpp
 #include "tensor.hpp"
+
 #include <unordered_set>
 #include <unordered_map>
 
 namespace autodiff {
 
-namespace {
+// ---- Constructors ----
 
-// DFS to build a topological order of nodes reachable from `node`
+Tensor::Tensor()
+    : data()
+    , requires_grad(false)
+    , grad()
+    , grad_initialized(false)
+    , grad_fn(nullptr)
+    , accumulate_node(nullptr)
+{}
+
+Tensor::Tensor(const Matrix& data_,
+               bool          requires_grad_,
+               NodePtr       grad_fn_)
+    : data(data_)
+    , requires_grad(requires_grad_)
+    , grad(Matrix::Zero(data_.rows(), data_.cols()))
+    , grad_initialized(false)
+    , grad_fn(std::move(grad_fn_))
+    , accumulate_node(nullptr)
+{}
+
+// ---- Basic info ----
+
+bool Tensor::is_leaf() const {
+    return !grad_fn && requires_grad;
+}
+
+std::pair<int,int> Tensor::shape() const {
+    return { static_cast<int>(data.rows()),
+             static_cast<int>(data.cols()) };
+}
+
+// ---- Shape checks ----
+
+void Tensor::check_binary_op_shapes(const Matrix& a,
+                                    const Matrix& b,
+                                    const std::string& op_name) {
+    auto a_rows = a.rows();
+    auto a_cols = a.cols();
+    auto b_rows = b.rows();
+    auto b_cols = b.cols();
+
+    if (op_name == "add" || op_name == "sub" ||
+        op_name == "mul" || op_name == "div" ||
+        op_name == "pow") {
+
+        if (a_rows != b_rows || a_cols != b_cols) {
+            throw std::runtime_error(
+                "Shape mismatch in " + op_name +
+                ": matrices must match exactly");
+        }
+        return;
+    }
+
+    if (op_name == "matmul") {
+        if (a_cols != b_rows) {
+            throw std::runtime_error(
+                "Matmul shape mismatch: (" +
+                std::to_string(a_rows) + "," + std::to_string(a_cols) +
+                ") @ (" +
+                std::to_string(b_rows) + "," + std::to_string(b_cols) +
+                ") is invalid"
+            );
+        }
+        return;
+    }
+
+    throw std::runtime_error("Unknown op: " + op_name);
+}
+
+// ---- Parent function builder ----
+
+NodePtr Tensor::make_parent_fn(const TensorPtr& t) {
+    if (t->is_leaf()) {
+        if (!t->accumulate_node) {
+            t->accumulate_node = std::make_shared<AccumulateGrad>(t);
+        }
+        // std::shared_ptr<AccumulateGrad> -> NodePtr
+        return t->accumulate_node;
+    } else if (t->requires_grad && t->grad_fn) {
+        return t->grad_fn;
+    } else {
+        return nullptr;
+    }
+}
+
+// ---- Backward graph traversal ----
+
+namespace {
 void build_topo(const NodePtr& node,
                 std::unordered_set<Node*>& visited,
                 std::vector<NodePtr>& topo) {
@@ -19,7 +106,6 @@ void build_topo(const NodePtr& node,
     }
     visited.insert(raw);
 
-    // Recurse on parents (the graph edges for backward)
     for (auto& wparent : node->parents) {
         if (auto parent = wparent.lock()) {
             build_topo(parent, visited, topo);
@@ -28,7 +114,6 @@ void build_topo(const NodePtr& node,
 
     topo.push_back(node);
 }
-
 } // anonymous namespace
 
 void Tensor::backward() {

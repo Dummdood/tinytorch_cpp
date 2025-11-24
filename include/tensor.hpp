@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <vector>
-#include <functional>
 #include <stdexcept>
 #include <string>
 
@@ -14,37 +13,25 @@ namespace autodiff {
 
 struct Tensor : public std::enable_shared_from_this<Tensor> {
     Matrix data;
-    bool   requires_grad = false;
+    bool   requires_grad;
 
     Matrix grad;
-    bool   grad_initialized = false;
+    bool   grad_initialized;
 
-    NodePtr                      grad_fn;
+    NodePtr                        grad_fn;
     std::shared_ptr<AccumulateGrad> accumulate_node;
 
-    Tensor() = default;
-
+    // Constructors
+    Tensor();
     Tensor(const Matrix& data_,
            bool          requires_grad_ = false,
-           NodePtr       grad_fn_       = nullptr)
-        : data(data_)
-        , requires_grad(requires_grad_)
-        , grad_fn(std::move(grad_fn_))
-    {
-        // Make grad the same shape as data, but keep the “initialized” flag separate.
-        grad = Matrix::Zero(data.rows(), data.cols());
-        grad_initialized = false;
-    }
+           NodePtr       grad_fn_       = nullptr);
 
-    bool is_leaf() const {
-        return !grad_fn && requires_grad;
-    }
+    // Basic info
+    bool is_leaf() const;
+    std::pair<int,int> shape() const;
 
-    std::pair<int,int> shape() const {
-        return { static_cast<int>(data.rows()),
-                 static_cast<int>(data.cols()) };
-    }
-
+    // Backprop entry point
     void backward();
 
 private:
@@ -53,9 +40,10 @@ private:
                                        const Matrix& b,
                                        const std::string& op_name);
 
+    // Build the parent function for a tensor (either its grad_fn or AccumulateGrad)
     static NodePtr make_parent_fn(const TensorPtr& t);
 
-    // ---- Generic helpers for ops ----
+    // ---- Generic helpers for ops (templates must stay in header) ----
     template <typename OpBackward, typename F>
     static TensorPtr binary_op(const TensorPtr& a,
                                const TensorPtr& b,
@@ -83,63 +71,15 @@ public:
     static TensorPtr mean   (const TensorPtr& a);
 };
 
-// ===== Inline / template definitions =====
+// ===== Template / inline definitions that must stay in the header =====
 
-inline void Tensor::check_binary_op_shapes(const Matrix& a,
-                                           const Matrix& b,
-                                           const std::string& op_name) {
-    auto a_rows = a.rows();
-    auto a_cols = a.cols();
-    auto b_rows = b.rows();
-    auto b_cols = b.cols();
-
-    if (op_name == "add" || op_name == "sub" ||
-        op_name == "mul" || op_name == "div" ||
-        op_name == "pow") {
-
-        if (a_rows != b_rows || a_cols != b_cols) {
-            throw std::runtime_error(
-                "Shape mismatch in " + op_name +
-                ": matrices must match exactly");
-        }
-        return;
-    }
-
-    if (op_name == "matmul") {
-        if (a_cols != b_rows) {
-            throw std::runtime_error(
-                "Matmul shape mismatch: (" +
-                std::to_string(a_rows) + "," + std::to_string(a_cols) +
-                ") @ (" +
-                std::to_string(b_rows) + "," + std::to_string(b_cols) +
-                ") is invalid"
-            );
-        }
-        return;
-    }
-
-    throw std::runtime_error("Unknown op: " + op_name);
-}
-
-inline NodePtr Tensor::make_parent_fn(const TensorPtr& t) {
-    if (t->is_leaf()) {
-        if (!t->accumulate_node) {
-            t->accumulate_node = std::make_shared<AccumulateGrad>(t);
-        }
-        // std::shared_ptr<AccumulateGrad> -> NodePtr
-        return t->accumulate_node;
-    } else if (t->requires_grad && t->grad_fn) {
-        return t->grad_fn;
-    } else {
-        return nullptr;
-    }
-}
+// ---- Generic helpers ----
 
 template <typename OpBackward, typename F>
-inline TensorPtr Tensor::binary_op(const TensorPtr& a,
-                                   const TensorPtr& b,
-                                   const std::string& op_name,
-                                   F op) {
+TensorPtr Tensor::binary_op(const TensorPtr& a,
+                            const TensorPtr& b,
+                            const std::string& op_name,
+                            F op) {
     if (!a || !b) {
         throw std::runtime_error(op_name + ": null TensorPtr");
     }
@@ -173,7 +113,7 @@ inline TensorPtr Tensor::binary_op(const TensorPtr& a,
 }
 
 template <typename OpBackward, typename F>
-inline TensorPtr Tensor::unary_op(const TensorPtr& a, F op) {
+TensorPtr Tensor::unary_op(const TensorPtr& a, F op) {
     if (!a) {
         throw std::runtime_error("unary_op: null TensorPtr");
     }

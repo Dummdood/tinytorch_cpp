@@ -23,15 +23,18 @@ int main() {
     double lr = 0.1;
 
     for (int step = 0; step < 10; ++step) {
-        // manual zero_grad for now
-        w->grad.setZero();
-        w->grad_initialized = false;
+        // ergonomic zero_grad
+        w->zero_grad();
 
-        auto y_pred = Tensor::mul(x, w);
+        // forward
+        // auto y_pred = Tensor::mul(x, w);
+        auto y_pred = x * w;
         auto loss   = mse_loss(y_pred, y_true);
 
+        // backward
         loss->backward();
 
+        // SGD step
         w->data = w->data - lr * w->grad;
 
         std::cout << "step " << step
@@ -40,4 +43,6 @@ int main() {
                   << " | w.grad = " << w->grad(0, 0)
                   << "\n";
     }
+
+    return 0;
 }

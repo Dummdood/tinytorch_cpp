@@ -38,6 +38,12 @@ std::pair<int,int> Tensor::shape() const {
              static_cast<int>(data.cols()) };
 }
 
+void Tensor::zero_grad() {
+    grad.resize(data.rows(), data.cols());
+    grad.setZero();
+    grad_initialized = false;
+}
+
 // ---- Shape checks ----
 
 void Tensor::check_binary_op_shapes(const Matrix& a,

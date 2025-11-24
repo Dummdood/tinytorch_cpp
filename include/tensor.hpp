@@ -34,6 +34,18 @@ struct Tensor : public std::enable_shared_from_this<Tensor> {
     // Backprop entry point
     void backward();
 
+    // Ergonomics
+    void zero_grad();
+
+    // Instance-style unary ops, Python-like
+    TensorPtr relu();
+    TensorPtr sigmoid();
+    TensorPtr exp();
+    TensorPtr log();
+    TensorPtr sum();
+    TensorPtr mean();
+
+
 private:
     // ---- Shape checks ----
     static void check_binary_op_shapes(const Matrix& a,
@@ -257,6 +269,32 @@ inline TensorPtr Tensor::mean(const TensorPtr& a) {
             return out;
         }
     );
+}
+
+// ---- Ergonomic instance methods ----
+
+inline TensorPtr Tensor::relu() {
+    return Tensor::relu(shared_from_this());
+}
+
+inline TensorPtr Tensor::sigmoid() {
+    return Tensor::sigmoid(shared_from_this());
+}
+
+inline TensorPtr Tensor::exp() {
+    return Tensor::exp(shared_from_this());
+}
+
+inline TensorPtr Tensor::log() {
+    return Tensor::log(shared_from_this());
+}
+
+inline TensorPtr Tensor::sum() {
+    return Tensor::sum(shared_from_this());
+}
+
+inline TensorPtr Tensor::mean() {
+    return Tensor::mean(shared_from_this());
 }
 
 // ---- Free operator overloads ----

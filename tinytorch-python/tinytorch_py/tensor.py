@@ -62,15 +62,6 @@ class Tensor:
     def backward(self):
         Engine.backward(self)
 
-    def print_graph(self):
-        print(f"Tensor(data={self.data}, requires_grad={self.requires_grad}, is_leaf={self.is_leaf})")
-        if self.grad_fn is None:
-            print("  grad_fn: None")
-            return
-        print(f"  grad_fn: {self.grad_fn.__class__.__name__}")
-        print("Computation graph (backward):")
-        Engine.print_graph(self.grad_fn, indent=2)
-
     @staticmethod
     def _check_binary_op_shapes(a: "Tensor", b: "Tensor", op_name: str):
         a_shape = a.shape

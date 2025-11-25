@@ -1,6 +1,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
-#include <pybind11/eigen.h>   // <=== ADD THIS
+#include <pybind11/eigen.h>
+#include <pybind11/stl.h>
+
 
 #include "tensor.hpp"
 #include "loss.hpp"
@@ -63,17 +65,29 @@ PYBIND11_MODULE(tinytorch_cpp, m) {
 
     // Linear
     py::class_<Linear>(m, "Linear")
-        .def(py::init<int,int,bool>())
-        .def("__call__", &Linear::operator())
-        .def("parameters", &Linear::parameters)
-        ;
+     .def(py::init<int,int,bool>(),
+          py::arg("in_features"),
+          py::arg("out_features"),
+          py::arg("bias") = true)
+     .def("__call__", &Linear::operator())
+     .def("parameters", &Linear::parameters)
+     .def_readwrite("weight", &Linear::weight)
+     .def_readwrite("bias",   &Linear::bias);
+
 
     // MLP
     py::class_<MLP>(m, "MLP")
-        .def(py::init<int, std::vector<int>, int, std::string, std::string>())
-        .def("__call__", &MLP::operator())
-        .def("parameters", &MLP::parameters)
-        ;
+     .def(py::init<int,const std::vector<int>&,int,
+                    const std::string&, const std::string&>(),
+          py::arg("input_dim"),
+          py::arg("hidden_dims"),
+          py::arg("output_dim"),
+          py::arg("activation") = "relu",
+          py::arg("output_activation") = "")
+     .def("__call__", &MLP::operator())
+     .def("parameters", &MLP::parameters)
+     .def_readwrite("layers", &MLP::layers);
+
 
     // SGD
     py::class_<SGD>(m, "SGD")

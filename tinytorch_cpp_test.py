@@ -52,7 +52,7 @@ def linear_2d_regression_test(X_data, y_data, W_true, b_true):
     print("=== Linear 2D regression test (Python) ===")
 
     N, D = X_data.shape
-    lin = tc.Linear(D, 1)
+    lin = tc.Linear(D, 1, True)
     opt = tc.SGD(lin.parameters(), 0.1)
 
     epochs = 200

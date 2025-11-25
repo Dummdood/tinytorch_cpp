@@ -41,6 +41,15 @@ TensorPtr Linear::operator()(const TensorPtr& x) const {
     return out;
 }
 
+std::vector<TensorPtr> Linear::parameters() const {
+    std::vector<TensorPtr> params;
+    params.push_back(weight);
+    if (has_bias) {
+        params.push_back(bias);
+    }
+    return params;
+}
+
 // ===== MLP =====
 
 MLP::MLP(int input_dim,
@@ -94,38 +103,10 @@ std::vector<TensorPtr> MLP::parameters() const {
     params.reserve(layers.size() * 2);
 
     for (const auto& layer : layers) {
-        params.push_back(layer.weight);
-        if (layer.has_bias) {
-            params.push_back(layer.bias);
-        }
+        auto lp = layer.parameters();
+        params.insert(params.end(), lp.begin(), lp.end());
     }
     return params;
-}
-
-// ===== SGD =====
-
-SGD::SGD(const std::vector<TensorPtr>& params_, double lr_)
-    : params(params_)
-    , lr(lr_)
-{}
-
-void SGD::zero_grad() {
-    for (auto& p : params) {
-        if (!p) continue;
-        if (p->grad_initialized) {
-            p->grad.setZero();
-            p->grad_initialized = false;
-        }
-    }
-}
-
-void SGD::step() {
-    for (auto& p : params) {
-        if (!p) continue;
-        if (p->requires_grad && p->grad_initialized) {
-            p->data -= lr * p->grad;
-        }
-    }
 }
 
 } // namespace autodiff

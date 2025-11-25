@@ -19,6 +19,9 @@ struct Linear {
 
     // Forward pass: x (1 x in_features) -> (1 x out_features)
     TensorPtr operator()(const TensorPtr& x) const;
+
+    // Collect this layer's parameters (weight + optional bias)
+    std::vector<TensorPtr> parameters() const;
 };
 
 // -------- Simple MLP: stack of Linear layers + activations --------
@@ -40,18 +43,6 @@ struct MLP {
 
     // Collect all trainable parameters (weights + biases)
     std::vector<TensorPtr> parameters() const;
-};
-
-// -------- Super tiny SGD optimizer --------
-
-struct SGD {
-    std::vector<TensorPtr> params;
-    double                 lr;
-
-    SGD(const std::vector<TensorPtr>& params_, double lr_);
-
-    void zero_grad();
-    void step();
 };
 
 } // namespace autodiff

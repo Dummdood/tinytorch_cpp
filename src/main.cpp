@@ -1,131 +1,132 @@
 #include "tensor.hpp"
 #include "loss.hpp"
 #include "optim.hpp"
+#include "nn.hpp"
 #include <iostream>
 
 using namespace autodiff;
 
 int main() {
     // ===============================
-    // 1) Tiny 1D training demo
+    // 1) Linear 2D regression test
     // ===============================
-    std::cout << "=== Tiny 1D training demo ===\n";
+    std::cout << "=== Linear 2D regression test ===\n";
 
-    Matrix x_data(1, 1);
-    x_data(0, 0) = 2.0;
+    const int N = 100;
+    const int D = 2;
 
-    Matrix w_data(1, 1);
-    w_data(0, 0) = 1.0;
-
-    auto x = std::make_shared<Tensor>(x_data, false);  // no grad
-    auto w = std::make_shared<Tensor>(w_data, true);   // learnable
-
-    Matrix y_true_data(1, 1);
-    y_true_data(0, 0) = 8.0;
-    auto y_true = std::make_shared<Tensor>(y_true_data, false);
-
-    double lr1 = 0.1;
-
-    for (int step = 0; step < 10; ++step) {
-        w->zero_grad();
-
-        // y_pred = x * w
-        auto y_pred = x * w;            // uses operator* -> Tensor::mul
-        auto loss   = mse_loss(y_pred, y_true);
-
-        loss->backward();
-
-        w->data = w->data - lr1 * w->grad;
-
-        std::cout << "step " << step
-                  << " | loss = " << loss->data(0, 0)
-                  << " | w = " << w->data(0, 0)
-                  << " | w.grad = " << w->grad(0, 0)
-                  << "\n";
-    }
-
-    std::cout << "Final w (1D demo) ≈ " << w->data(0, 0) << "\n\n";
-
-
-    // =========================================
-    // 2) 2D "stress test" regression with many ops
-    // =========================================
-    std::cout << "=== 2D stress test (matmul + exp + log + sigmoid + pow) ===\n";
-
-    const int N = 100;  // number of samples
-    const int D = 2;    // feature dimension
-
-    // Synthetic data X ~ uniform-ish in [-1, 1]
+    // Synthetic data: X ~ uniform in [-1, 1]
     Matrix X_data = Matrix::Random(N, D);
 
-    // True weights for underlying function
+    // True parameters
     Matrix W_true(D, 1);
     W_true << 3.0, -2.0;
+    double b_true = 0.5;
 
-    // True logits: X * W_true
-    Matrix logits_true = X_data * W_true;
+    // y = X W_true + b_true
+    Matrix y_data = X_data * W_true;
+    y_data.array() += b_true;
 
-    // True probabilities via sigmoid(logits_true)
-    Matrix probs_true = (1.0 / (1.0 + (-logits_true.array()).exp())).matrix();
+    // Model: Linear(D -> 1)
+    Linear lin(D, 1);
 
-    // We'll train the model to match probs_true^2 using a more complex forward:
-    // logits -> exp -> log -> sigmoid -> pow(·, 2)
-    Matrix y_true_sq_data = probs_true.array().square().matrix();
+    // Optimizer for its parameters
+    SGD opt_lin(lin.parameters(), /*lr=*/0.1);
 
-    // Wrap data in Tensors (no grad)
-    auto X_stress      = std::make_shared<Tensor>(X_data, false);
-    auto y_true_sq     = std::make_shared<Tensor>(y_true_sq_data, false);
+    int epochs_lin = 200;
 
-    // Learnable weight vector W (D x 1), random init
-    Matrix W_init = 0.1 * Matrix::Random(D, 1);
-    auto W = std::make_shared<Tensor>(W_init, true);
+    for (int epoch = 0; epoch < epochs_lin; ++epoch) {
+        double total_loss = 0.0;
 
-    // Exponent tensor (same shape as output): all 2.0
-    Matrix exp_mat = Matrix::Constant(N, 1, 2.0);
-    auto exponent = std::make_shared<Tensor>(exp_mat, false);  // no grad
+        for (int i = 0; i < N; ++i) {
+            opt_lin.zero_grad();
 
-    double lr2     = 0.1;
-    int    epochs  = 15000;
+            // x_i: (1 x D)
+            Matrix x_i_mat(1, D);
+            x_i_mat = X_data.row(i);
 
-    for (int epoch = 0; epoch < epochs; ++epoch) {
-        W->zero_grad();
+            // y_i: (1 x 1)
+            Matrix y_i_mat(1, 1);
+            y_i_mat(0, 0) = y_data(i, 0);
 
-        // Forward:
-        // logits = X * W                               (N x 1)
-        auto logits = Tensor::matmul(X_stress, W);
+            auto x_i = std::make_shared<Tensor>(x_i_mat, false);
+            auto y_i = std::make_shared<Tensor>(y_i_mat, false);
 
-        // exp_logits = exp(logits)                    (N x 1)
-        auto exp_logits = Tensor::exp(logits);
+            auto y_pred = lin(x_i);
+            auto loss   = mse_loss(y_pred, y_i);
 
-        // log_exp_logits = log(exp_logits)            (N x 1) ≈ logits
-        auto log_exp_logits = Tensor::log(exp_logits);
+            total_loss += loss->data(0, 0);
 
-        // probs = sigmoid(log_exp_logits)             (N x 1)
-        auto probs = Tensor::sigmoid(log_exp_logits);
+            loss->backward();
+            opt_lin.step();
+        }
 
-        // probs_sq = probs^2 via pow(probs, exponent) (N x 1)
-        auto probs_sq = Tensor::pow(probs, exponent);
-
-        // Loss: MSE(probs_sq, y_true_sq)
-        auto loss = mse_loss(probs_sq, y_true_sq);
-
-        // Backward through the whole graph
-        loss->backward();
-
-        // Gradient step on W
-        W->data = W->data - lr2 * W->grad;
-
-        if (epoch % 50 == 0) {
+        if (epoch % 20 == 0) {
+            double avg_loss = total_loss / N;
             std::cout << "epoch " << epoch
-                      << " | loss = " << loss->data(0, 0)
+                      << " | avg loss = " << avg_loss
                       << " | W = ["
-                      << W->data(0, 0) << ", " << W->data(1, 0) << "]\n";
+                      << lin.weight->data(0, 0) << ", "
+                      << lin.weight->data(1, 0) << "]"
+                      << " | b = " << lin.bias->data(0, 0)
+                      << "\n";
         }
     }
 
-    std::cout << "\nTrue W = [3, -2]\n";
+    std::cout << "True  W = [3, -2], b = 0.5\n";
     std::cout << "Learned W ≈ ["
-              << W->data(0, 0) << ", " << W->data(1, 0) << "]\n";
+              << lin.weight->data(0, 0) << ", "
+              << lin.weight->data(1, 0) << "], b ≈ "
+              << lin.bias->data(0, 0) << "\n\n";
+
+
+    // ===============================
+    // 2) MLP 2D regression test
+    // ===============================
+    std::cout << "=== MLP 2D regression test ===\n";
+
+    // Tiny MLP: 2 -> 4 -> 1 with ReLU in the hidden layer
+    MLP mlp(D, /*hidden_dims=*/{4}, /*output_dim=*/1,
+            /*activation=*/"relu",
+            /*output_activation=*/"");
+
+    SGD opt_mlp(mlp.parameters(), /*lr=*/0.05);
+
+    int epochs_mlp = 200;
+
+    for (int epoch = 0; epoch < epochs_mlp; ++epoch) {
+        double total_loss = 0.0;
+
+        for (int i = 0; i < N; ++i) {
+            opt_mlp.zero_grad();
+
+            Matrix x_i_mat(1, D);
+            x_i_mat = X_data.row(i);
+
+            Matrix y_i_mat(1, 1);
+            y_i_mat(0, 0) = y_data(i, 0);
+
+            auto x_i = std::make_shared<Tensor>(x_i_mat, false);
+            auto y_i = std::make_shared<Tensor>(y_i_mat, false);
+
+            auto y_pred = mlp(x_i);
+            auto loss   = mse_loss(y_pred, y_i);
+
+            total_loss += loss->data(0, 0);
+
+            loss->backward();
+            opt_mlp.step();
+        }
+
+        if (epoch % 20 == 0) {
+            double avg_loss = total_loss / N;
+            std::cout << "epoch " << epoch
+                      << " | avg loss = " << avg_loss
+                      << "\n";
+        }
+    }
+
+    std::cout << "First layer W:\n" << mlp.layers[0].weight->data << "\n";
 
     return 0;
 }

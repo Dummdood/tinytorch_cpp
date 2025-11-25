@@ -1,121 +1,84 @@
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <pybind11/numpy.h>
+#include <pybind11/eigen.h>   // <=== ADD THIS
 
 #include "tensor.hpp"
-#include "module.hpp"
-#include "linear.hpp"
-#include "optimizer.hpp"
+#include "loss.hpp"
+#include "nn.hpp"
+#include "optim.hpp"
 
 namespace py = pybind11;
+using namespace autodiff;
 
 PYBIND11_MODULE(tinytorch_cpp, m) {
-    m.doc() = "TinyTorch-CPP Python bindings";
+    m.doc() = "TinyTorch C++ backend exposed to Python";
 
-    // ----------------------------
-    // Tensor
-    // ----------------------------
-    py::class_<Tensor>(m, "Tensor")
-        // Constructors
-        .def(py::init<int, int, bool>(),
-             py::arg("rows"),
-             py::arg("cols"),
-             py::arg("requires_grad") = false)
+    py::class_<Tensor, std::shared_ptr<Tensor>>(m, "Tensor")
+        // ---- Constructor from numpy ----
+        .def(py::init([](Eigen::MatrixXd mat, bool requires_grad) {
+            return std::make_shared<Tensor>(mat, requires_grad);
+        }))
 
-        // Basic properties
-        .def_property_readonly("rows", &Tensor::rows)
-        .def_property_readonly("cols", &Tensor::cols)
-        .def_property_readonly("shape", [](const Tensor& t) {
-            return std::make_pair(t.rows(), t.cols());
-        })
-        .def_property("requires_grad",
-                      &Tensor::requires_grad,
-                      &Tensor::set_requires_grad)
-
-        // Grad access: grad or None
-        .def_property_readonly("grad", [](Tensor& t) -> py::object {
-            if (!t.has_grad()) {
-                return py::none();
+        // ---- data / grad as numpy arrays ----
+        .def_property(
+            "data",
+            [](Tensor& t) { return t.data; },
+            [](Tensor& t, const Eigen::MatrixXd& m) { t.data = m; }
+        )
+        .def_property(
+            "grad",
+            [](Tensor& t) { return t.grad; },
+            [](Tensor& t, const Eigen::MatrixXd& m) {
+                t.grad = m;
+                t.grad_initialized = true;
             }
-            // Expose a reference so Python sees live updates
-            return py::cast(std::ref(t.grad()));
-        })
+        )
 
-        // Methods
-        .def("zero_grad", &Tensor::zero_grad)
+        .def("zero_grad", [](Tensor& t) {
+            t.grad.setZero();
+            t.grad_initialized = false;
+        })
         .def("backward", &Tensor::backward)
-        .def("item", &Tensor::item)
 
-        // Indexing: t[i, j]
-        .def("__getitem__", [](const Tensor& t, std::pair<int, int> idx) {
-            return t(idx.first, idx.second);
+        // ---- Operator overloads ----
+        .def("__add__", [](const TensorPtr& a, const TensorPtr& b) {
+            return Tensor::add(a, b);
         })
-        .def("__setitem__", [](Tensor& t, std::pair<int, int> idx, float value) {
-            t(idx.first, idx.second) = value;
+        .def("__sub__", [](const TensorPtr& a, const TensorPtr& b) {
+            return Tensor::sub(a, b);
         })
+        .def("__mul__", [](const TensorPtr& a, const TensorPtr& b) {
+            return Tensor::mul(a, b);
+        })
+        .def("__truediv__", [](const TensorPtr& a, const TensorPtr& b) {
+            return Tensor::div(a, b);
+        })
+        .def("__matmul__", [](const TensorPtr& a, const TensorPtr& b) {
+            return Tensor::matmul(a, b);
+        })
+        ;
 
-        // Optional: simple repr
-        .def("__repr__", [](const Tensor& t) {
-            return "<Tensor shape=(" +
-                   std::to_string(t.rows()) + "," +
-                   std::to_string(t.cols()) + ")>";
-        });
+    // Loss
+    m.def("mse_loss", &mse_loss);
 
-    // mse_loss as a free function
-    m.def("mse_loss",
-          &Tensor::mse_loss,
-          py::arg("pred"),
-          py::arg("target"),
-          "Mean squared error loss returning a scalar Tensor");
-
-    // ----------------------------
-    // Module base class
-    // ----------------------------
-    py::class_<Module, std::shared_ptr<Module>>(m, "Module")
-        .def("forward", &Module::forward)
-        .def("parameters", &Module::parameters)
-        .def("zero_grad", &Module::zero_grad);
-
-    // ----------------------------
     // Linear
-    // ----------------------------
-    py::class_<Linear, Module, std::shared_ptr<Linear>>(m, "Linear")
-        .def(py::init<int, int>(),
-             py::arg("in_features"),
-             py::arg("out_features"))
-        .def("forward", &Linear::forward);
+    py::class_<Linear>(m, "Linear")
+        .def(py::init<int,int,bool>())
+        .def("__call__", &Linear::operator())
+        .def("parameters", &Linear::parameters)
+        ;
 
-    // ----------------------------
-    // Sequential
-    // ----------------------------
-    py::class_<Sequential, Module, std::shared_ptr<Sequential>>(m, "Sequential")
-        .def(py::init<>())
-        .def("add", &Sequential::add)
-        .def("forward", &Sequential::forward)
-        .def("parameters", &Sequential::parameters)
-        .def("zero_grad", &Sequential::zero_grad);
+    // MLP
+    py::class_<MLP>(m, "MLP")
+        .def(py::init<int, std::vector<int>, int, std::string, std::string>())
+        .def("__call__", &MLP::operator())
+        .def("parameters", &MLP::parameters)
+        ;
 
-    // ----------------------------
-    // ReLU module
-    // ----------------------------
-    py::class_<ReLU, Module, std::shared_ptr<ReLU>>(m, "ReLU")
-        .def(py::init<>())
-        .def("forward", &ReLU::forward)
-        .def("parameters", &ReLU::parameters);
-
-    // ----------------------------
-    // Sigmoid module
-    // ----------------------------
-    py::class_<Sigmoid, Module, std::shared_ptr<Sigmoid>>(m, "Sigmoid")
-        .def(py::init<>())
-        .def("forward", &Sigmoid::forward)
-        .def("parameters", &Sigmoid::parameters);
-
-    // ----------------------------
-    // SGD optimizer
-    // ----------------------------
+    // SGD
     py::class_<SGD>(m, "SGD")
-        .def(py::init<float>(), py::arg("lr"))
-        .def("step", [](SGD& opt, Module& m) {
-            opt.step(m);
-        }, py::arg("module"));
+        .def(py::init<std::vector<TensorPtr>, double>())
+        .def("zero_grad", &SGD::zero_grad)
+        .def("step", &SGD::step)
+        ;
 }

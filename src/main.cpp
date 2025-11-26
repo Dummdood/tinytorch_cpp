@@ -2,11 +2,30 @@
 #include "loss.hpp"
 #include "optim.hpp"
 #include "nn.hpp"
+
 #include <iostream>
+#include <random>
+#include <chrono>
 
 using namespace autodiff;
 
+static Matrix uniform_matrix(int rows, int cols, double lo, double hi, std::mt19937& rng) {
+    std::uniform_real_distribution<double> dist(lo, hi);
+    Matrix m(rows, cols);
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            m(r, c) = dist(rng);
+        }
+    }
+    return m;
+}
+
 int main() {
+    // Match Python: np.random.seed(0)
+    std::mt19937 rng(0);
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+
     // ===============================
     // 1) Linear 2D regression test
     // ===============================
@@ -16,7 +35,7 @@ int main() {
     const int D = 2;
 
     // Synthetic data: X ~ uniform in [-1, 1]
-    Matrix X_data = Matrix::Random(N, D);
+    Matrix X_data = uniform_matrix(N, D, -1.0, 1.0, rng);
 
     // True parameters
     Matrix W_true(D, 1);
@@ -28,7 +47,7 @@ int main() {
     y_data.array() += b_true;
 
     // Model: Linear(D -> 1)
-    Linear lin(D, 1);
+    Linear lin(D, 1, /*bias=*/true);
 
     // Optimizer for its parameters
     SGD opt_lin(lin.parameters(), /*lr=*/0.1);
@@ -79,7 +98,6 @@ int main() {
               << lin.weight->data(1, 0) << "], b ≈ "
               << lin.bias->data(0, 0) << "\n\n";
 
-
     // ===============================
     // 2) MLP 2D regression test
     // ===============================
@@ -126,7 +144,11 @@ int main() {
         }
     }
 
-    std::cout << "First layer W:\n" << mlp.layers[0].weight->data << "\n";
+    std::cout << "First layer W:\n" << mlp.layers[0].weight->data << "\n\n";
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = t1 - t0;
+    std::cout << "[C++ TinyTorch] total seconds = " << elapsed.count() << "\n";
 
     return 0;
 }

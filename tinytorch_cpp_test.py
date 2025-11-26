@@ -21,40 +21,6 @@ def make_dataset(N=100, D=2):
     return X, y, W_true, b_true
 
 
-def tiny_1d_demo():
-    print("=== Tiny 1D training demo (C++ backend) ===")
-
-    x_data = np.array([[2.0]], dtype=np.float64)
-    w_data = np.array([[1.0]], dtype=np.float64)
-    y_true_data = np.array([[8.0]], dtype=np.float64)
-
-    x = tc.Tensor(x_data, False)
-    w = tc.Tensor(w_data, True)
-    y_true = tc.Tensor(y_true_data, False)
-
-    lr = 0.1
-
-    for step in range(10):
-        w.zero_grad()
-
-        # y_pred = x * w
-        y_pred = x * w
-        loss = tc.mse_loss(y_pred, y_true)
-        loss.backward()
-
-        # SGD update on w
-        w.data = w.data - lr * w.grad
-
-        loss_val = float(loss.data[0, 0])
-        w_val = float(w.data[0, 0])
-        g_val = float(w.grad[0, 0])
-
-        # Match the style of your previous prints as much as possible
-        print(f"step {step} | loss = {loss_val} | w = {w_val} | w.grad = {g_val}")
-
-    print(f"Final w (1D demo) ≈ {float(w.data[0, 0])}\n")
-
-
 def linear_2d_regression_test(X_data, y_data, W_true, b_true):
     print("=== Linear 2D regression test (C++ backend) ===")
 
@@ -140,14 +106,10 @@ def mlp_2d_regression_test(X_data, y_data):
 
 
 if __name__ == "__main__":
-    print("Using module:", tc)
-
     # Match Python TinyTorch behavior: fix RNG for reproducibility
     np.random.seed(0)
 
     t0 = time.perf_counter()
-
-    tiny_1d_demo()
 
     X_data, y_data, W_true, b_true = make_dataset()
     linear_2d_regression_test(X_data, y_data, W_true, b_true)

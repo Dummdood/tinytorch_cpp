@@ -1,11 +1,16 @@
 # TinyTorch-CPP
 
-A tiny, educational autograd engine and neural-net playground written in modern C++17, with:
-- a minimal Tensor + dynamic computation graph (`grad_fn` nodes)
-- backward passes for common ops (add, mul, matmul, relu, sigmoid, exp, log, sum, mean, pow, …)
-- a small `nn` layer stack (`Linear`, `MLP`)
-- a simple `SGD` optimizer
-- Python bindings via **pybind11** so you can train from Python while executing the core in C++
+TinyTorch-CPP is a lightweight, dependency-minimal deep learning engine implemented in modern C++17, 
+designed to run MLPs (multilayer perceptrons) where full-scale frameworks like PyTorch introduce unnecessary overhead and complexity.
+The library was first written in Python using the Numpy library to fine tune the architecture prior to writing it fully in C++.
+Both versions can be found within this repository.
+
+It integrates:
+- A dynamic autograd (automatic differentation) engine
+- A Tensor API with Eigen-backed numerical kernels
+- A small but extensible neural module system (`Linear`, `MLP`)
+- Python bindings via `pybind11` for use of library in python code.
+- Matched Python and C++ benchmark harnesses for direct comparison
 
 This repo also includes a pure-Python “reference” TinyTorch and benchmark scripts to compare:
 - C++ executable
@@ -13,78 +18,73 @@ This repo also includes a pure-Python “reference” TinyTorch and benchmark sc
 - pure Python TinyTorch
 - PyTorch baseline
 
-## Repository layout
-tinytorch-cpp/
-│
-├── CMakeLists.txt
-├── README.md
-├── .gitmodules
-├── .gitignore
-│
-├── extern/
-│   └── pybind11/                # pybind11 submodule
-│
-├── include/
-│   ├── tensor.hpp
-│   ├── backward_nodes.hpp
-│   ├── loss.hpp
-│   ├── optim.hpp
-│   └── nn.hpp
-│
-├── src/
-│   ├── tensor.cpp
-│   ├── backward_nodes.cpp
-│   ├── loss.cpp
-│   ├── optim.cpp                # optional (may be empty or omitted)
-│   ├── nn.cpp
-│   ├── bindings.cpp             # pybind11 module implementation
-│   └── tinytorch_cpp_bench.cpp  # C++ benchmark executable
-│
-├── build/                       # created by CMake
-│   └── tinytorch_cpp*.so        # python extension after build
-│
-└── tinytorch-python/
-    └── tinytorch_py/
-        ├── tensor.py
-        ├── losses.py
-        ├── optim/
-        │   ├── sgd.py
-        │   └── ...
-        ├── nn/
-        │   ├── mlp.py
-        │   └── ...
-        ├── backward_nodes.py
-        ├── engine.py
-        ├── tinytorch_cpp_bench.py    # Python → C++ benchmark
-        ├── tinytorch_py_bench.py     # pure Python benchmark
-        └── pytorch_bench.py          # PyTorch baseline
-
-
-## What’s implemented (C++ core)
-
-- **Autograd graph:** `Tensor` holds `grad_fn` (`NodePtr`) and gradients are accumulated in leaf nodes via `AccumulateGrad`.
-- **Backward nodes:** per-op `Node::apply(grad_output)` returning gradients to parents.
-- **SGD:** `zero_grad()` + `step()`.
-- **NN blocks:** `Linear` and `MLP` with trainable parameters exposed via `.parameters()`.
-
-Limitations (by design, for learning):
-- no GPU, no broadcasting (unless you added it), no batching abstractions beyond what you manually code
-- not optimized for performance yet (allocations, per-sample loops, Eigen expression choices, etc.)
+## Core Features
+1. Dynamic Autograd Engine
+   - Each operation creates a dedicated backward node used to calculate gradients during backpropagation.
+   - Graph traversal via BLANK similar to PyTorch Library.
+   - Supports tensor operations:
+        `add`, `mul`, `matmul`, `exp`, `log`, `sigmoid`, `relu`, `pow`, `sum`, `mean`, and more.
+2. Tensor API
+   - Backed by Eigen, allows high-performance native C++ vectorization.
+   - Specialized in small-matrix workloads typical in embedded inference.
+3. Modules
+   - `Linear(in_features, out_features)`
+   - `MLP([layers)` with configurable activation and output function.
+   - `.parameters()` returns a structured parameter list compatible with optimizers.
+4. Optimizers
+   - SGD (stochastic gradient descent) without hidden state.
+5. Python Bindings
+   - Exposes the full C++ engine to Python with zero copy where possible.
+   - Enables training loops that look like PyTorch while executing C++ ops.
 
 ## Build prerequisites
 
 - CMake (>= 3.14)
-- A C++17 compiler (Clang on macOS works)
+- A C++17 compiler
 - Eigen (installed and available on your include path)
-- Python 3.x (if building bindings)
+- Python 3.12 (if building bindings)
 - pybind11 is included as a submodule in `extern/pybind11`
 
 ## Build (C++ bench + Python module)
 
 From the repo root:
-
-```bash
+### 1. Initialize Submodules
+```
 git submodule update --init --recursive
+```
 
+### 2. Build C++ Core + Python Extension
+```
 cmake -S . -B build
 cmake --build build -j
+```
+
+This produces:
+- `build/tinytorch_cpp_bench.out` – C++ benchmark executable
+- `build/tinytorch_cpp.*.so` – Python extension module
+
+## Running the Benchmarks
+**C++ Benchmark**
+```
+./build/tinytorch_cpp_bench.out
+```
+
+**Python Calling C++ Core**
+```
+python3 tinytorch-python/tinytorch_py/tinytorch_cpp_bench.py
+```
+
+**Pure Python TinyTorch**
+```
+python3 tinytorch-python/tinytorch_py/tinytorch_py_bench.py
+```
+
+**PyTorch Baseline**
+```
+python3 tinytorch-python/tinytorch_py/pytorch_bench.py
+```
+
+All three follow equivalent workloads:
+- Tiny 1-D training demo + linear regression on synthetic 2-D data + MLP regression
+- Wall-clock timing for comparison
+

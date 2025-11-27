@@ -36,6 +36,37 @@ This repo also includes a pure-Python “reference” TinyTorch and benchmark sc
 5. Python Bindings
    - Exposes the full C++ engine to Python with zero copy where possible.
    - Enables training loops that look like PyTorch while executing C++ ops.
+  
+## Performance Results
+As expected, as observed in the python training benchmarks
+
+During benchmark testing, pure-C++ TinyTorch and pure-Python TinyTorch (NumPy-based) perform similarly.
+Reasons likely include:
+- The Python version uses NumPy, backed by highly optimized binaries.
+- The C++ version uses many shared_ptr allocations for graph nodes.
+- Eigen expression templates can still incur copies depending on usage.
+
+  
+## Lessons Learned
+
+Building TinyTorch-CPP provided experience with:
+- Designing a computation graph and writing backward passes manually.
+- Debugging gradient flows and validating autodiff correctness.
+- Efficient C++ memory ownership (shared_ptr, weak_ptr).
+- Isolating graph nodes and avoiding memory leaks.
+- Using Eigen effectively for linear algebra.
+- Exposing a full C++ API to Python using pybind11.
+- Writing fair benchmark harnesses comparing Python, C++, and PyTorch.
+- Understanding why real ML frameworks use heavy vectorization and fused kernels.
+
+## Future Improvements
+- Broadcasting support
+- Batch training utilities
+- More activation and loss functions (tanh, cross-entropy)
+- LayerNorm, Softmax, Dropout
+- Parameter serialization (state_dict-like)
+- Memory pool for graph allocations
+- Fused kernels and more aggressive Eigen optimization
 
 ## Build prerequisites
 

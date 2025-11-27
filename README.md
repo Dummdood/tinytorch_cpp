@@ -38,13 +38,21 @@ This repo also includes a pure-Python “reference” TinyTorch and benchmark sc
    - Enables training loops that look like PyTorch while executing C++ ops.
   
 ## Performance Results
-As expected, as observed in the python training benchmarks
 
-During benchmark testing, pure-C++ TinyTorch and pure-Python TinyTorch (NumPy-based) perform similarly.
+As seen in the benchmarks, pure-C++ TinyTorch performed nearly 2× faster than the PyTorch baseline.  
+This improvement is likely due to TinyTorch’s lower framework overhead, predictable execution model, and the absence of PyTorch’s substantial dynamic runtime machinery.
+
+When using the library through a Python frontend via pybind11 bindings, the performance gain narrows to roughly 10%.  
+This reduction is expected: Python↔C++ crossing introduces measurable overhead, and training loops executed on the Python side require frequent cross-language calls, partially offsetting TinyTorch’s lightweight C++ execution.
+
+In addition, pure-C++ TinyTorch and pure-Python TinyTorch (NumPy-based) perform similarly.  
 Reasons likely include:
-- The Python version uses NumPy, backed by highly optimized binaries.
-- The C++ version uses many shared_ptr allocations for graph nodes.
-- Eigen expression templates can still incur copies depending on usage.
+
+- The Python implementation uses NumPy, which is backed by highly optimized binaries.  
+- The C++ version makes heavy use of `shared_ptr` allocations to construct the autograd graph, which becomes a dominant cost for small tensors.  
+
+Overall, the results validate the design goal:  
+TinyTorch achieves lower per-operation overhead, predictable execution, and strong C++ performance, while remaining interoperable with Python when needed.
 
   
 ## Lessons Learned

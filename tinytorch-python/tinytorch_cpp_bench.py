@@ -5,9 +5,9 @@ import time
 import numpy as np
 
 # Allow root-directory execution: import tinytorch_cpp from ./build
-ROOT_DIR = os.path.dirname(__file__)
-BUILD_DIR = os.path.join(ROOT_DIR, "build")
-sys.path.append(BUILD_DIR)
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+BUILD = os.path.join(ROOT, "build")
+sys.path.append(BUILD)
 
 import tinytorch_cpp as tc
 

@@ -120,7 +120,7 @@ void build_topo(const NodePtr& node,
 
     topo.push_back(node);
 }
-} // anonymous namespace
+}
 
 void Tensor::backward() {
     if (!requires_grad) {
@@ -130,7 +130,6 @@ void Tensor::backward() {
     // Seed gradient at this tensor: d(loss)/d(this)
     Matrix grad_out = Matrix::Ones(data.rows(), data.cols());
 
-    // If this is a leaf (no grad_fn), just accumulate into grad and stop
     if (!grad_fn) {
         if (!grad_initialized) {
             grad = grad_out;
@@ -141,16 +140,15 @@ void Tensor::backward() {
         return;
     }
 
-    // Build topological order of nodes in the backward graph
+    // Build topological order of nodes 
     std::unordered_set<Node*> visited;
     std::vector<NodePtr> topo;
     build_topo(grad_fn, visited, topo);
 
-    // Map from raw Node* to its accumulated gradient
     std::unordered_map<Node*, Matrix> node_grads;
     node_grads[grad_fn.get()] = grad_out;
 
-    // Process nodes from root (this->grad_fn) toward leaves
+    // Process nodes from root toward leaves
     for (auto it = topo.rbegin(); it != topo.rend(); ++it) {
         NodePtr node = *it;
         Node* raw = node.get();
@@ -162,7 +160,6 @@ void Tensor::backward() {
 
         const Matrix& g = itg->second;
 
-        // Local backward: each Node returns a grad (optional) per parent
         auto grads_to_parents = node->apply(g);
 
         // Push grads down to parents
@@ -186,10 +183,10 @@ void Tensor::backward() {
             if (itp == node_grads.end()) {
                 node_grads[parent_raw] = *opt_pg;
             } else {
-                itp->second += *opt_pg; // multiple paths accumulate
+                itp->second += *opt_pg;
             }
         }
     }
 }
 
-} // namespace autodiff
+}

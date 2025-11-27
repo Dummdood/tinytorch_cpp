@@ -37,7 +37,7 @@ struct Tensor : public std::enable_shared_from_this<Tensor> {
     // Ergonomics
     void zero_grad();
 
-    // Instance-style unary ops, Python-like
+    // Instance-style unary ops
     TensorPtr relu();
     TensorPtr sigmoid();
     TensorPtr exp();
@@ -52,10 +52,10 @@ private:
                                        const Matrix& b,
                                        const std::string& op_name);
 
-    // Build the parent function for a tensor (either its grad_fn or AccumulateGrad)
+    // Build the parent function for a tensor
     static NodePtr make_parent_fn(const TensorPtr& t);
 
-    // ---- Generic helpers for ops (templates must stay in header) ----
+    // ---- Generic helpers for ops ----
     template <typename OpBackward, typename F>
     static TensorPtr binary_op(const TensorPtr& a,
                                const TensorPtr& b,
@@ -82,8 +82,6 @@ public:
     static TensorPtr sum    (const TensorPtr& a);
     static TensorPtr mean   (const TensorPtr& a);
 };
-
-// ===== Template / inline definitions that must stay in the header =====
 
 // ---- Generic helpers ----
 
@@ -319,4 +317,4 @@ inline TensorPtr operator%(const TensorPtr& a, const TensorPtr& b) {
     return Tensor::matmul(a, b);
 }
 
-} // namespace autodiff
+}

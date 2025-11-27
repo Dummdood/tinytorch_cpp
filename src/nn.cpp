@@ -26,8 +26,6 @@ TensorPtr Linear::operator()(const TensorPtr& x) const {
     auto out = Tensor::matmul(x, weight);  // (1 x out_features)
 
     if (has_bias) {
-        // For now we *don't* support broadcasting.
-        // So we enforce batch_size == 1 and exact shape match.
         if (out->data.rows() != bias->data.rows() ||
             out->data.cols() != bias->data.cols()) {
             throw std::runtime_error(
@@ -109,4 +107,4 @@ std::vector<TensorPtr> MLP::parameters() const {
     return params;
 }
 
-} // namespace autodiff
+}

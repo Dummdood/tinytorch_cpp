@@ -17,10 +17,8 @@ struct Linear {
 
     Linear(int in_features, int out_features, bool bias_ = true);
 
-    // Forward pass: x (1 x in_features) -> (1 x out_features)
     TensorPtr operator()(const TensorPtr& x) const;
 
-    // Collect this layer's parameters (weight + optional bias)
     std::vector<TensorPtr> parameters() const;
 };
 
@@ -38,11 +36,9 @@ struct MLP {
         const std::string& activation_        = "relu",
         const std::string& output_activation_ = "");
 
-    // Forward: applies all layers and activations
     TensorPtr operator()(const TensorPtr& x) const;
 
-    // Collect all trainable parameters (weights + biases)
     std::vector<TensorPtr> parameters() const;
 };
 
-} // namespace autodiff
+}

@@ -41,7 +41,7 @@ class Engine:
 
         node_grads = {root: grad_output}
 
-        # Process nodes from root toward leaves (reverse post-order)
+        # Process nodes from root toward leaves
         for node in reversed(topo):
             g = node_grads.get(node)
             if g is None:

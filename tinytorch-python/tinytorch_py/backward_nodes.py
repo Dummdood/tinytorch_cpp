@@ -123,14 +123,14 @@ class LogBackward(UnaryOpBackward):
     def _compute_grad(self, a: "Tensor", grad_output: np.ndarray):
         if not a.requires_grad:
             return None
-        # d/dx log(x) = 1/x  (user’s responsibility to avoid x<=0)
+        # d/dx log(x) = 1/x
         return grad_output * (1.0 / a.data)
 
 class SumBackward(UnaryOpBackward):
     def _compute_grad(self, a: "Tensor", grad_output: np.ndarray):
         if not a.requires_grad:
             return None
-        # y = sum(x_ij); dy/dx_ij = 1 → gradient is grad_output broadcasted
+        # y = sum(x_ij); dy/dx_ij = 1
         return grad_output * np.ones_like(a.data)
 
 class MeanBackward(UnaryOpBackward):

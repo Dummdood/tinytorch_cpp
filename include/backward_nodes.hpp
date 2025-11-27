@@ -1,4 +1,3 @@
-// backward_nodes.hpp
 #pragma once
 
 #include <memory>
@@ -12,7 +11,7 @@
 
 namespace autodiff {
 
-struct Tensor;      // forward
+struct Tensor;
 struct AccumulateGrad;
 
 using Matrix    = Eigen::MatrixXd;
@@ -161,11 +160,11 @@ protected:
 struct AccumulateGrad : public Node {
     std::weak_ptr<Tensor> tensor;
 
-    explicit AccumulateGrad(const TensorPtr& t);  // <-- declaration only
+    explicit AccumulateGrad(const TensorPtr& t);
 
     std::vector<std::optional<Matrix>>
     apply(const Matrix& grad_output) override;
 };
 
 
-} // namespace autodiff
+}

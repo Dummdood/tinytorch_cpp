@@ -35,11 +35,11 @@ set_property(TARGET tinytorch_core PROPERTY POSITION_INDEPENDENT_CODE ON)
 # -------------------------------------------------------------------
 # 3) C++ demo executable
 # -------------------------------------------------------------------
-add_executable(tinytorch_demo.out
-    src/main.cpp
+add_executable(tinytorch_cpp_bench.out
+    src/tinytorch_cpp_bench.cpp
 )
 
-target_link_libraries(tinytorch_demo.out PRIVATE tinytorch_core)
+target_link_libraries(tinytorch_cpp_bench.out PRIVATE tinytorch_core)
 
 # -------------------------------------------------------------------
 # 4) Python extension module using pybind11

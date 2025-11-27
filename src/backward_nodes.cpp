@@ -1,5 +1,5 @@
 // backward_nodes.cpp
-#include "tensor.hpp"   // <- gives full Tensor definition + includes backward_nodes.hpp
+#include "tensor.hpp"
 
 namespace autodiff {
 
@@ -218,8 +218,8 @@ AccumulateGrad::apply(const Matrix& grad_output) {
         t->grad += grad_output;
     }
 
-    return {}; // no parents
+    return {};
 }
 
 
-} // namespace autodiff
+}

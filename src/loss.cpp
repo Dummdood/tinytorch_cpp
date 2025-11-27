@@ -20,4 +20,4 @@ TensorPtr mse_loss(const TensorPtr& y_pred, const TensorPtr& y_true) {
     return mse;
 }
 
-} // namespace autodiff
+}

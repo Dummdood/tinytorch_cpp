@@ -15,7 +15,7 @@ Makefile
 *.dylib
 *.dll
 .vscode/
-tinytorch_demo
+tinytorch_cpp_bench.out
 EOF
 
 __pycache__/

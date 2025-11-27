@@ -21,7 +21,6 @@ static Matrix uniform_matrix(int rows, int cols, double lo, double hi, std::mt19
 }
 
 int main() {
-    // Match Python: np.random.seed(0)
     std::mt19937 rng(0);
 
     auto t0 = std::chrono::high_resolution_clock::now();

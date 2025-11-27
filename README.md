@@ -1,73 +1,90 @@
 # TinyTorch-CPP
 
-TinyTorch-CPP is a small deep learning framework written in C++17 with a Python frontend via `pybind11`.  
-The goals are:
+A tiny, educational autograd engine and neural-net playground written in modern C++17, with:
+- a minimal Tensor + dynamic computation graph (`grad_fn` nodes)
+- backward passes for common ops (add, mul, matmul, relu, sigmoid, exp, log, sum, mean, pow, …)
+- a small `nn` layer stack (`Linear`, `MLP`)
+- a simple `SGD` optimizer
+- Python bindings via **pybind11** so you can train from Python while executing the core in C++
 
-- Learn how frameworks like PyTorch work under the hood
-- Implement a minimal autograd engine
-- Build simple neural networks from both C++ and Python
+This repo also includes a pure-Python “reference” TinyTorch and benchmark scripts to compare:
+- C++ executable
+- C++ core called from Python (pybind module)
+- pure Python TinyTorch
+- PyTorch baseline
 
----
+## Repository layout
+tinytorch-cpp/
+│
+├── CMakeLists.txt
+├── README.md
+├── .gitmodules
+├── .gitignore
+│
+├── extern/
+│   └── pybind11/                # pybind11 submodule
+│
+├── include/
+│   ├── tensor.hpp
+│   ├── backward_nodes.hpp
+│   ├── loss.hpp
+│   ├── optim.hpp
+│   └── nn.hpp
+│
+├── src/
+│   ├── tensor.cpp
+│   ├── backward_nodes.cpp
+│   ├── loss.cpp
+│   ├── optim.cpp                # optional (may be empty or omitted)
+│   ├── nn.cpp
+│   ├── bindings.cpp             # pybind11 module implementation
+│   └── tinytorch_cpp_bench.cpp  # C++ benchmark executable
+│
+├── build/                       # created by CMake
+│   └── tinytorch_cpp*.so        # python extension after build
+│
+└── tinytorch-python/
+    └── tinytorch_py/
+        ├── tensor.py
+        ├── losses.py
+        ├── optim/
+        │   ├── sgd.py
+        │   └── ...
+        ├── nn/
+        │   ├── mlp.py
+        │   └── ...
+        ├── backward_nodes.py
+        ├── engine.py
+        ├── tinytorch_cpp_bench.py    # Python → C++ benchmark
+        ├── tinytorch_py_bench.py     # pure Python benchmark
+        └── pytorch_bench.py          # PyTorch baseline
 
-## Features
 
-- **Tensor**
-  - 2D tensors stored as `std::vector<float>`
-  - Shape: `(rows, cols)`
-  - Element access: `t(row, col)`
-  - Factory helpers: `zeros`, `ones`, `randn`, `normal`, `full`
-  - Ops with autograd: `add`, `mul`, `matmul`, `relu`, `sigmoid`, `sum`, `mse_loss`
-  - Autograd:
-    - `requires_grad` flag
-    - `.grad()` storage (lazy allocation)
-    - `.backward()` for scalar tensors (1×1)
+## What’s implemented (C++ core)
 
-- **Autograd graph**
-  - `Node` struct with:
-    - `std::vector<Tensor*> parents`
-    - `std::function<void(const Tensor&)> backward`
-  - Each differentiable op creates a `Node` and attaches it to its output tensor as `grad_fn_`
+- **Autograd graph:** `Tensor` holds `grad_fn` (`NodePtr`) and gradients are accumulated in leaf nodes via `AccumulateGrad`.
+- **Backward nodes:** per-op `Node::apply(grad_output)` returning gradients to parents.
+- **SGD:** `zero_grad()` + `step()`.
+- **NN blocks:** `Linear` and `MLP` with trainable parameters exposed via `.parameters()`.
 
-- **Modules / Layers**
-  - `Module` base class
-    - `virtual Tensor forward(const Tensor& x)`
-    - `virtual std::vector<Tensor*> parameters()`
-    - `void zero_grad()`
-  - `Linear`: fully-connected layer `y = xW + b`
-  - `Sequential`: container that applies submodules in order
-  - `ReLU` and `Sigmoid` as `Module`s (no parameters)
+Limitations (by design, for learning):
+- no GPU, no broadcasting (unless you added it), no batching abstractions beyond what you manually code
+- not optimized for performance yet (allocations, per-sample loops, Eigen expression choices, etc.)
 
-- **Optimizer**
-  - `SGD` with:
-    - `SGD(float lr)`
-    - `step(const std::vector<Tensor*>& params)`
-    - `step(Module& m)` convenience
+## Build prerequisites
 
-- **Python bindings**
-  - Built with `pybind11` as a submodule under `extern/pybind11`
-  - Python extension module: `tinytorch_cpp`
-  - Exposes (at minimum):
-    - `Tensor`
-    - `mse_loss`
-    - (optionally) `Linear`, `Sequential`, `ReLU`, `Sigmoid`, `SGD`
+- CMake (>= 3.14)
+- A C++17 compiler (Clang on macOS works)
+- Eigen (installed and available on your include path)
+- Python 3.x (if building bindings)
+- pybind11 is included as a submodule in `extern/pybind11`
 
----
+## Build (C++ bench + Python module)
 
-## Directory Layout
+From the repo root:
 
-```text
-TINYTORCH-CPP/
-  include/
-    tensor.hpp
-    node.hpp
-    module.hpp
-    linear.hpp
-    optimizer.hpp
-    ... (other headers)
-  src/
-    main.cpp          # C++ demo / playground
-    bindings.cpp      # pybind11 bindings for Python
-  extern/
-    pybind11/         # pybind11 submodule (git submodule)
-  CMakeLists.txt
-  README.md
+```bash
+git submodule update --init --recursive
+
+cmake -S . -B build
+cmake --build build -j

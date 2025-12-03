@@ -124,6 +124,4 @@ python3 tinytorch-python/tinytorch_py/pytorch_bench.py
 ```
 
 All three follow equivalent workloads:
-- Tiny 1-D training demo + linear regression on synthetic 2-D data + MLP regression
-- Wall-clock timing for comparison
-
+- Tiny 1-D training demo + linear regression on synthetic 2-D data + MLP regression 
